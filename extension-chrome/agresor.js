@@ -223,8 +223,14 @@
   const guardarPA = () => { try { localStorage.setItem('muPvpAutoV1', JSON.stringify({ v: 2, on: PA.on, umbral: PA.umbral })); } catch (e) { /* nada */ } };
   const histVida = [];
   const nomDe = (id) => { const r = nombreDe.get(id); return r && Date.now() - r.t < 20000 ? r.nm : undefined; };      // el id de un jugador cambia si sale y vuelve a entrar: el nombre vale 20 s
-  const PVP = { on: false, auto: false, uno: null, unoNombre: '', objetivos: 0, casts: 0, tandas: 0, muertes: 0, descartados: 0, sinHechizos: 0, ult: '', hechizosSinClic: 0 };
-  const pulsoPvp = () => { call('SetManualSkillHeld', 0); call('SetManualSkillHeld', 1); };
+  const PVP = { on: false, auto: false, uno: null, unoNombre: '', raton: false, enganchado: false, objetivos: 0, casts: 0, tandas: 0, muertes: 0, descartados: 0, sinHechizos: 0, ult: '', hechizosSinClic: 0 };
+  // v0.87.0 PVP CON EL MOUSE (tecla 0): ataca al jugador que tengas más cerca del puntero (<= 90 px). Posición del mouse REAL (los eventos simulados no cuentan: isTrusted).
+  // Mientras hay un blanco enganchado se frenan los movimientos reales hacia el juego (si no, el puntero real y el simulado se pisan y el clic derecho mantenido se suelta).
+  const CUR = { x: null, y: null, t: 0 }, RADIO_CUR = 90, SOLTAR_CUR = 150;
+  { const ACc = new AbortController(); (window.__muLimpiar = window.__muLimpiar || []).push(() => ACc.abort());
+    window.addEventListener('pointermove', (e) => { if (!e.isTrusted) return; CUR.x = e.clientX; CUR.y = e.clientY; CUR.t = Date.now(); if (PVP.on && PVP.raton && PVP.enganchado) e.stopImmediatePropagation(); }, { capture: true, signal: ACc.signal}); }
+  const pulsoPvp = () =>
+ { call('SetManualSkillHeld', 0); call('SetManualSkillHeld', 1); };
   function candidatosPvp(edadMax) {
     const S = window.__pantalla, ahora = Date.now(), h = { x: call('GetHeroX'), y: call('GetHeroY') }, out = [];
     pos.forEach((j, id) => {
@@ -237,7 +243,7 @@
     return out;
   }
   async function pvpLoop() {
-    const auto = PVP.auto, uno = PVP.uno, etq = uno ? 'PVP UNO (' + PVP.unoNombre + ')' : auto ? 'PVP AUTO' : 'PVP F10', tIni = Date.now();
+    const auto = PVP.auto, uno = PVP.uno, raton = PVP.raton, etq = raton ? 'PVP MOUSE' : uno ? 'PVP UNO (' + PVP.unoNombre + ')' : auto ? 'PVP AUTO' : 'PVP F10', tIni = Date.now();
     const S = window.__pantalla, Mo = window.__modo, P = window.__paquetes;
     const fin = (txt) => { PVP.ult = txt; log(etq + ': ' + txt); };
     if (!S || !S.cal || !S.cal() || !S.derecho) { PVP.on = false; return fin('falta calibrar la pantalla (Lab > Datos y calibración > Pantalla)'); }
@@ -246,9 +252,10 @@
     if (modoAg === 'apagado') { modoAg = 'avisar'; guardar(); log('F10 prendió la lectura de jugadores (modo de agresores: avisar)'); }
     const prev = Mo.deseado(), pk0 = call('GetPkMode');
     const pelea = { id: -1, desde: Date.now(), casts: 0, chunks: 0, pkAntes: call('GetHeroPk'), vidaMin: vidaPct(), placas: [], resultado: '', pvp: true };
-    peleando = pelea; Mo.fijar('pelea', uno ? 'PVP a ' + PVP.unoNombre : 'F10: jugador al azar'); call('SetPkMode', uno ? 0 : 1);      // contra uno solo: el modo PK se prende recién cuando la placa confirma el nombre
+    peleando = pelea; Mo.fijar('pelea', raton ? 'PVP con el mouse' : uno ? 'PVP a ' + PVP.unoNombre : 'F10: jugador al azar'); call('SetPkMode', uno || raton ? 0 : 1);      // contra uno solo: el modo PK se prende recién cuando la placa confirma el nombre
     fin('prendido (modo anterior ' + prev + ', PK antes ' + pk0 + ')');
     let avisoSin = 0, sinJugDesde = 0;
+    const distCur = (x) => { const q = pos.get(x), px = q && S.pixelAtaque({ x: q.tx, y: q.ty }); return px && CUR.x != null ? Math.hypot(px.x - CUR.x, px.y - CUR.y) : Infinity; };
     try {
       while (PVP.on && vivo) {
         if (Mo.deseado() !== 'pelea') { fin('otro modo tomó el control (' + Mo.deseado() + ')'); break; }
@@ -256,7 +263,13 @@
         if (vidaPct() < VIDA_CORTE * 100) { fin('vida baja (' + vidaPct() + ' %): corto'); break; }
         if (typeof document !== 'undefined' && document.hasFocus && !document.hasFocus()) { await dormir(400); continue; }
         let cand;
-        if (uno) {      // contra uno solo: por nombre. Nunca se ataca a otro; si no está a la vista, espera
+        if (raton) {      // al jugador que esté más cerca del puntero; si el mouse no está cerca de ninguno, espera con el modo PK apagado
+          call('SetPkMode', 0); PVP.enganchado = false;
+          const cu = candidatosPvp(40000).filter((x) => { const n = nomDe(x); return !(n && (enParty(n) || enTexto(str('GetGuildMembersUtf8'), n))); });
+          cand = cu.filter((x) => distCur(x) <= RADIO_CUR).sort((p, q) => distCur(p) - distCur(q));
+          if (!cand.length) { if (Date.now() - avisoSin > 15000) { avisoSin = Date.now(); log(etq + ': ' + (CUR.x == null ? 'todavía no moviste el mouse' : 'ningún jugador cerca del puntero') + ', espero'); } await dormir(80); continue; }
+        } else if (uno) {
+      // contra uno solo: por nombre. Nunca se ataca a otro; si no está a la vista, espera
           call('SetPkMode', 0);
           if (enParty(PVP.unoNombre) || enTexto(str('GetGuildMembersUtf8'), PVP.unoNombre)) { fin('ES DE TU PARTY/CLAN: no lo ataco'); break; }
           const cerca = str('GetCommandablePlayersUtf8').split('\n').some((l) => (l.split('\t')[1] || '').toLowerCase() === uno);
@@ -273,7 +286,7 @@
         if (auto) {      // al agresor confirmado (el que ataca con daño tuyo) si está a la vista; si no, al jugador más cercano
           const h = { x: call('GetHeroX'), y: call('GetHeroY') }, ag = activos().map((a) => a.id).find((x) => cand.includes(x));
           id = ag != null ? ag : cand.slice().sort((p, q) => cheb({ x: pos.get(p).tx, y: pos.get(p).ty }, h) - cheb({ x: pos.get(q).tx, y: pos.get(q).ty }, h))[0];
-        } else id = uno ? cand[0] : cand[Math.floor(Math.random() * cand.length)];
+        } else id = uno || raton ? cand[0] : cand[Math.floor(Math.random() * cand.length)];
         PVP.objetivos++; pelea.id = id; const t0 = Date.now(); let casts = 0, sinCasts = 0, motivo = 'tiempo', ultCheck = 0;
         const j0 = pos.get(id); const px0 = S.pixelAtaque({ x: j0.tx, y: j0.ty });
         S.derecho.iniciar(px0.x, px0.y); await dormir(250);
@@ -287,6 +300,17 @@
           }
           nombreDe.set(id, { nm: uno, t: Date.now() }); call('SetPkMode', 1); log(etq + ': lo encontré (#' + id + '): lo ataco');
         }
+        let objNm = '';
+        if (raton) {      // ¿quién es? la placa se mira SIN modo PK: si es de tu party/clan (o no se lee) no se le pega
+          let nm = ''; for (let k = 0; k < 14 && !nm; k++) { nm = (str('GetTargetPlateUtf8').split('\t')[0] || '').trim(); if (!nm) await dormir(30); }
+          if (!nm || enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) {
+            try { const c = S.centro(); S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ }
+            if (nm) { nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); frio.set(id, Date.now() + 3600000); PVP.descartados++; log(etq + ': #' + id + ' (' + nm + ') es de tu party/clan: no lo toco'); }
+            else { frio.set(id, Date.now() + 4000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': no pude leer la placa de #' + id + ' (el clic derecho sin modo PK quizá no lo selecciona)'); }
+            await dormir(250); continue;
+          }
+          objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + ' (#' + id + ')');
+        }
         const timer = setInterval(() => { try { pulsoPvp(); } catch (e) { /* nada */ } }, 10);
         let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now();
         try {
@@ -295,13 +319,19 @@
             if (!(call('GetPlayerLife') > 0)) { motivo = 'morí'; break; }
             if (vidaPct() < VIDA_CORTE * 100) { motivo = 'vida baja'; break; }
             const m = muertos.get(id); if (m && m >= t0) { motivo = 'LO MATÉ (aviso de muerte)'; PVP.muertes++; break; }
-            if (!j || ahora - j.t > (uno ? 40000 : 5000)) { motivo = 'se fue'; frio.set(id, ahora + 30000); break; }
+            if (!j || ahora - j.t > (uno || raton ? 40000 : 5000)) { motivo = 'se fue'; frio.set(id, ahora + 30000); break; }
             if (cheb({ x: j.tx, y: j.ty }, { x: call('GetHeroX'), y: call('GetHeroY') }) > 11) { motivo = 'se alejó'; frio.set(id, ahora + 30000); break; }
             const px = S.pixelAtaque({ x: j.tx, y: j.ty }); if (!px || !S.enPantalla(px)) { motivo = 'salió de la pantalla'; frio.set(id, ahora + 20000); break; }
             S.derecho.mover(px.x, px.y);
-            if (ahora - ultCheck > (uno ? 150 : 1000)) {            // la placa del blanco: si es de tu party o clan, se corta y no se lo vuelve a elegir
+            if (ahora - ultCheck > (uno || raton ? 150 : 1000)) {            // la placa del blanco: si es de tu party o clan, se corta y no se lo vuelve a elegir
               ultCheck = ahora; const placa = str('GetTargetPlateUtf8').replace(/\t/g, ' | '), nombre = placa.split(' | ')[0];
               if (placa && !pelea.placas.includes(placa) && pelea.placas.length < 8) pelea.placas.push(placa);
+              if (raton) {      // misma placa que al enganchar; party/clan corta con el PK apagado; y el mouse manda: si lo sacás o lo ponés sobre otro, cambia
+                if (nombre && nombre.trim() !== objNm) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
+                if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { call('SetPkMode', 0); motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): paro'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
+                const d0 = distCur(id); if (d0 > SOLTAR_CUR) { motivo = 'sacaste el mouse'; break; }
+                if (d0 > RADIO_CUR * 0.7) { const otro = candidatosPvp(40000).find((x) => x !== id && distCur(x) <= RADIO_CUR * 0.7 && distCur(x) < d0 - 25); if (otro != null) { motivo = 'el mouse pasó a otro jugador'; break; } }
+              }
               if (uno && nombre && nombre.trim().toLowerCase() !== uno) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
               if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): lo descarto'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
             }
@@ -309,31 +339,32 @@
               const c2 = P.cuenta('tx', 'C3:0x19'), d = c2 - c1; casts += d; PVP.casts += d; pelea.casts += d; PVP.tandas++; pelea.chunks++; c1 = c2; tC = ahora;
               if (d <= 0) { if (++sinCasts >= 2) { motivo = 'no salen hechizos sobre él (¿no se lo puede atacar? ¿falta el modo PK?)'; PVP.sinHechizos++; frio.set(id, ahora + 120000); break; } } else sinCasts = 0;
             }
-            if (!uno && ahora - t0 > 25000) { motivo = 'pasaron 25 s: elijo otro'; frio.set(id, ahora + 20000); break; }
+            if (!uno && !raton && ahora - t0 > 25000) { motivo = 'pasaron 25 s: elijo otro'; frio.set(id, ahora + 20000); break; }
             await dormir(60);
           }
         } finally {
-          clearInterval(timer); try { const c = S.centro(); S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ }
+          clearInterval(timer); PVP.enganchado = false; try { const c = S.centro(); S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ }
           const resto = P.cuenta('tx', 'C3:0x19') - c1; if (resto > 0) { casts += resto; PVP.casts += resto; pelea.casts += resto; PVP.tandas++; }       // los hechizos de la última tanda (menos de 2 s) también cuentan
         }
         PVP.ult = 'jugador #' + id + ': ' + motivo + ' · ' + Math.round((Date.now() - t0) / 1000) + ' s · ' + casts + ' hechizos'; log(etq + ': ' + PVP.ult);
         pelea.vidaMin = Math.min(pelea.vidaMin, vidaPct());
+        if (raton) { call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) frio.set(id, Date.now() + 4000); }
         if (uno) { frio.delete(id); call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) { fin('lo maté: termino'); break; } }
         if (/morí|vida baja/.test(motivo)) break;
         await dormir(300);
       }
     } catch (e) { fin('error: ' + String(e && e.message || e).slice(0, 80)); }
     finally {
-      PVP.on = false; PVP.auto = false; PA.frioHasta = Date.now() + 5000; try { call('SetPkMode', pk0 === 1 ? 1 : 0); } catch (e) { /* nada */ }
+      PVP.on = false; PVP.auto = false; PVP.enganchado = false; PA.frioHasta = Date.now() + 5000; try { call('SetPkMode', pk0 === 1 ? 1 : 0); } catch (e) { /* nada */ }
       pelea.seg = Math.round((Date.now() - pelea.desde) / 1000); pelea.resultado = PVP.ult; pelea.pkDespues = call('GetHeroPk'); peleas.push(pelea); if (peleas.length > 30) peleas.shift();
       try { if (vivo && Mo.deseado() === 'pelea') { const rr = Mo.fijar(FARMEO.includes(prev) && prev !== 'helper' ? prev : (prev === 'helper' ? 'helper' : 'manual'), 'F10: fin'); if (!rr || !rr.ok) Mo.fijar('helper', 'F10: fin'); } } catch (e) { /* nada */ }
       peleando = null; log(etq + ': apagado · PK ' + pelea.pkAntes + ' → ' + pelea.pkDespues + ' · ' + pelea.casts + ' hechizos en ' + pelea.seg + ' s');
     }
   }
-  function pvpToggle(v, auto, uno) {
+  function pvpToggle(v, auto, uno, raton) {
     const quiere = v == null ? !PVP.on : !!v;
     if (quiere === PVP.on) return PVP.on;
-    PVP.on = quiere; PVP.auto = quiere && !!auto; PVP.uno = quiere && uno ? String(uno).trim().toLowerCase() : null; PVP.unoNombre = PVP.uno ? String(uno).trim() : ''; if (quiere) pvpLoop().catch(() => { PVP.on = false; peleando = null; });
+    PVP.on = quiere; PVP.raton = quiere && !!raton; PVP.enganchado = false; PVP.auto = quiere && !!auto; PVP.uno = quiere && uno ? String(uno).trim().toLowerCase() : null; PVP.unoNombre = PVP.uno ? String(uno).trim() : ''; if (quiere) pvpLoop().catch(() => { PVP.on = false; peleando = null; });
     return PVP.on;
   }
 
@@ -464,7 +495,7 @@
     setModo: (m) => { if (!MODOS.includes(m)) return modoAg; modoAg = m; guardar(); log('modo de agresores: ' + m); return modoAg; },
     setHeroId: (n) => { heroId = n == null ? null : (n | 0); votos.clear(); totalVotos = 0; return heroId; },
     probar: (id) => pelear(id | 0),
-    pvp: pvpToggle, pvpUno: (nombre) => (nombre && String(nombre).trim() ? pvpToggle(true, false, nombre) : pvpToggle(false)), pvpOn: () => PVP.on, pvpStats: () => ({ ...PVP }), ataquesAJugadores: () => hist.slice(), ataquesTexto, borrarAtaques: () => { hist = []; guardarAtq(); return 0; },
+    pvp: pvpToggle, pvpRaton: (v) => pvpToggle(v, false, null, true), pvpUno: (nombre) => (nombre && String(nombre).trim() ? pvpToggle(true, false, nombre) : pvpToggle(false)), pvpOn: () => PVP.on, pvpStats: () => ({ ...PVP }), ataquesAJugadores: () => hist.slice(), ataquesTexto, borrarAtaques: () => { hist = []; guardarAtq(); return 0; },
     alerta: (v, min) => { if (v != null) AL.on = !!v; if (min >= 200 && min <= 20000) AL.min = min | 0; guardarAL(); return { on: AL.on, min: AL.min, mostradas: AL.mostradas, pico: Math.round(AL.pico) }; },
     alertaTest: () => { AL.jug = [{ nombre: 'Prueba', pk: 3, clan: false, party: false }, { nombre: 'Otro', pk: 0, clan: false, party: false }]; alertaMostrar('3.250 en 0.8 s', AL.jug, 'esto es una PRUEBA'); pitidoAlerta(); return true; },
     pvpAuto: (v, umbral) => { if (v != null) PA.on = !!v; if (umbral >= 500 && umbral <= 20000) PA.umbral = umbral | 0; guardarPA(); return { ...PA }; }, pvpAutoStats: () => ({ ...PA }),

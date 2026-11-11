@@ -77,6 +77,7 @@
         <div class="f"><b>Joyas</b> <button data-a="joy">Ver</button><button data-a="joyd">Depositar</button><button data-a="joyr">Retirar…</button> <button data-a="f6s" title="F6: 10 Bless, 10 Soul y 10 Chaos sueltas">F6 sueltas</button><button data-a="f6p" title="F6: 1 pack de Bless, 1 de Soul y 10 Chaos sueltas">F6 packs</button></div>
         <div class="f"><b>Probar</b> <button data-a="scp" title="Tira Summon ahora">Summon</button><button data-a="bfp" title="Lanza el buff de crítico ahora">Buff</button><button data-a="cmar" title="Deja una marca en la caja negra">Marcar: está mal</button></div>
         <div class="f"><b>Puntos</b> <button data-a="pt_m" title="Reparto por metas: VIT y AGI hasta 65.000, STR y ENE hasta 65.000 (50/50 si faltan puntos), 500 de Comando y TODO lo que sobre a Comando (por chat, cuando juntan 200 o más). Rige desde el próximo reparto (el del reset)">Metas: 65k a todos / resto a Comando</button><button data-a="pt_n" title="Cambiar los números de las metas">Cambiar…</button><button data-a="pt_o" title="Vuelve al reparto proporcional de antes (STR 33 / AGI 21 / VIT 7,5 / ENE 39 %)">Reparto anterior</button><button data-a="pt_v">Ver</button> <button data-a="pt_on">Auto ON</button><button data-a="pt_off">OFF</button></div>
+        <div class="f"><b>PVP con el mouse</b> <button data-a="pvm" title="Ataca al jugador que tengas más cerca del puntero (nunca a tu party ni a tu clan). Es lo mismo que la tecla 0">Prender / apagar (tecla 0)</button></div>
         <div class="f"><b>PVP a uno solo</b> <button data-a="pvu" title="Te pide el nombre y ataca SOLO a ese jugador (nunca a otro, ni a tu party/clan). Apretalo de nuevo para apagar">Elegir nombre…</button></div>
         <div class="f"><b>A quién ataqué</b> <button data-a="atq" title="Últimos jugadores a los que les tiraste hechizos (nombre, cuántos, si murió, de tu party/clan). Queda guardado aunque recargues; la lista completa va en la caja negra">Ver</button></div>
       </details></div>`;
@@ -91,6 +92,7 @@
       if (a === 'cmar') { if (window.__caja) window.__caja.marcar('MARCA: el usuario dice que ahora está mal'); return anotar('Marca guardada a las ' + new Date().toLocaleTimeString('es-AR', { hour12: false })); }
       if (a === 'scp') { const g = G(); if (!g) return anotar('grupo.js no cargó'); anotar('Tirando Summon…'); const r = await g.invocar('prueba del Lab'); return anotar(r.ok ? 'Summon lanzado (' + r.via + ')' : 'No salió: ' + (r.motivo || 'el enfriamiento no arrancó (mirá mana, Comando y que tengas la habilidad)')); }
       if (a === 'bfp') { const g = G(); if (!g || !g.buff) return anotar('grupo.js no cargó'); anotar('Lanzando el buff de crítico…'); const r = await g.buff.lanzar('prueba del Lab'); return anotar(r.ok ? 'Buff lanzado (' + r.via + ')' : 'No salió: ' + (r.motivo || 'no se vio ningún efecto ni hechizo enviado (mirá mana, Comando y la habilidad)')); }
+      if (a === 'pvm') { const A = window.__agresor; if (!A || !A.pvpRaton) return anotar('agresor.js no cargó (recargá la extensión)'); return toast(A.pvpRaton() ? 'PVP con el mouse ENCENDIDO' : 'PVP con el mouse APAGADO'); }
       if (a === 'pvu') { const A = window.__agresor; if (!A || !A.pvpUno) return anotar('agresor.js no cargó (recargá la extensión)'); if (A.pvpOn()) { A.pvp(false); return toast('PVP apagado'); } let u = ''; try { u = localStorage.getItem('muPvpUnoV1') || ''; } catch (e) { /* nada */ } const n = window.prompt('¿A qué jugador atacar? (solo a ese; tiene que estar cerca)', u); if (!n || !n.trim()) return anotar('PVP a uno: cancelado'); try { localStorage.setItem('muPvpUnoV1', n.trim()); } catch (e) { /* nada */ } A.pvpUno(n); return toast('PVP a ' + n.trim() + ': lo busco en pantalla (apretá de nuevo para apagar)'); }
       if (a === 'atq') { const A = window.__agresor; return anotar(A && A.ataquesTexto ? A.ataquesTexto(4) : 'agresor.js no cargó (recargá la extensión)'); }
       if (a.startsWith('pt_')) {
@@ -145,7 +147,7 @@
     };
   }
 
-  // ---- TECLAS RÁPIDAS: F6 sacar joyas del banco · F7 invitar a party · F8 Sostenida ON/OFF · F9 bajar la caja negra · F10 PVP al azar ----
+  // ---- TECLAS RÁPIDAS: F6 sacar joyas del banco · F7 invitar a party · F8 Sostenida ON/OFF · F9 bajar la caja negra · F10 PVP al azar · 0 PVP con el mouse ----
   // Se escuchan en la fase de captura de la ventana: el juego y el navegador no las ven. No actúan con Ctrl/Alt/Shift ni con el chat escribiendo.
   const KEY_TK = 'muTeclasV1'; let TK = { on: true, packs: false };
   try { const g = JSON.parse(localStorage.getItem(KEY_TK) || 'null'); if (g) TK = { ...TK, ...g }; } catch (e) { /* nada */ }
@@ -202,15 +204,21 @@
     const on = A.pvp();
     aviso(on ? 'F10: PVP ENCENDIDO: ataco a un jugador al azar de la pantalla con pulsos de 10 ms (F10 de nuevo para apagar)' : 'F10: PVP APAGADO');
   }
+  function teclaCero() {
+    const A = window.__agresor; if (!A || !A.pvpRaton) return aviso('0: agresor.js no cargó (recargá la extensión)');
+    const on = A.pvpRaton();
+    aviso(on ? '0: PVP CON EL MOUSE ENCENDIDO: ataco al jugador que tengas más cerca del puntero (nunca party/clan). 0 de nuevo para apagar' : '0: PVP CON EL MOUSE APAGADO');
+  }
   async function copiarTexto(t) {
     try { await navigator.clipboard.writeText(t); return true; } catch (e) { /* sin foco o sin permiso: se prueba el método viejo */ }
     try { const a = document.createElement('textarea'); a.value = t; a.style.cssText = 'position:fixed;left:-9999px;top:0'; (document.body || document.documentElement).appendChild(a); a.focus(); a.select(); const ok = document.execCommand('copy'); a.remove(); return !!ok; } catch (e) { return false; }
   }
   const ACtk = new AbortController(); (window.__muLimpiar = window.__muLimpiar || []).push(() => ACtk.abort());
-  const TECLAS = { F6: teclaF6, F7: teclaF7, F8: teclaF8, F9: teclaF9, F10: teclaF10 };
+  const TECLAS = { F6: teclaF6, F7: teclaF7, F8: teclaF8, F9: teclaF9, F10: teclaF10, '0': teclaCero };
   window.addEventListener('keydown', (e) => {
     try {
       const f = TECLAS[e.key]; if (!f || !TK.on || e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return;
+      if (e.key === '0') { const t = e.target, tg = t && t.tagName; if (tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT' || (t && t.isContentEditable)) return; }      // el 0 también se escribe en cuadros de texto de la página
       if (call('TextInputActive') === 1) { if (e.key === 'F8') { e.preventDefault(); e.stopImmediatePropagation(); if (!e.repeat) toast('F8 ignorada: el cuadro de chat del juego está abierto (Esc o Enter para cerrarlo y volvé a apretar)'); } return; }
       e.preventDefault(); e.stopImmediatePropagation(); if (e.repeat) return;
       Promise.resolve().then(f).catch((x) => anotar(e.key + ': error ' + String(x && x.message || x).slice(0, 80)));
