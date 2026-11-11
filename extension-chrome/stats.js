@@ -24,12 +24,12 @@
   // (valores TOTALES del stat, no lo que se suma), y lo que sobra en la proporción `resto` (STR/ENE). El modo 'pesos' es el reparto proporcional de antes (cfg.pesos). Se elige con Lab > Más > Puntos.
   // v0.86.1: VIT 14.500 = los ~10.500 que tenía + 4.000 más (pedido: "4 mil MÁS de vitalidad")
   const STR_TOPE = 65000;      // v0.86.2: el máximo de STR del servidor es ~65 mil (dato del usuario): al llegar se deja de sumar STR y todo el resto va a ENE; si no, el chat rechazaría /str para siempre
-  const METAS0 = { agi: 0, vit: 65000 }, RESTO0 = { str: 50, ene: 50 };      // v0.86.8 (pedido: "saquemos el 70/30: 65k a STR y ENE, 500 comando, 18k vitalidad y el resto a agi"): VIT 18.000, STR y ENE al tope de 65.000 (50/50 si faltan puntos) y el sobrante a AGI
-  const cfg = { on: false, pesos: { ...PESOS_V2 }, minimo: 7, v: 4, cmdPuntos: 500, modo: 'metas', metasV: 4, metas: { ...METAS0 }, resto: { ...RESTO0 } };      // minimo: con cuántos libres arranca un reparto (7 = un nivel); antes 30
+  const METAS0 = { agi: 65000, vit: 65000 }, RESTO0 = { str: 50, ene: 50 };      // v0.86.8 (pedido: "saquemos el 70/30: 65k a STR y ENE, 500 comando, 18k vitalidad y el resto a agi"): VIT 18.000, STR y ENE al tope de 65.000 (50/50 si faltan puntos) y el sobrante a AGI
+  const cfg = { on: false, pesos: { ...PESOS_V2 }, minimo: 7, v: 4, cmdPuntos: 500, modo: 'metas', restoCmd: true, metasV: 5, metas: { ...METAS0 }, resto: { ...RESTO0 } };      // minimo: con cuántos libres arranca un reparto (7 = un nivel); antes 30
   try {
     const g = JSON.parse(localStorage.getItem(KEY) || 'null');
-    if (g) { cfg.on = !!g.on; if (typeof g.cmdPuntos === 'number') cfg.cmdPuntos = g.cmdPuntos; if (g.pesos && g.v === 4) cfg.pesos = g.pesos;
-       if (g.modo === 'pesos' || g.modo === 'metas') cfg.modo = g.modo; if (g.metasV === 4 && g.metas && g.metas.agi >= 0 && g.metas.vit >= 0) cfg.metas = { agi: g.metas.agi | 0, vit: g.metas.vit | 0 }; if (g.metasV === 4 && g.resto && g.resto.str >= 0 && g.resto.ene >= 0 && g.resto.str + g.resto.ene > 0) cfg.resto = { str: +g.resto.str, ene: +g.resto.ene };   // las proporciones viejas (v3 o menos) se reemplazan por las nuevas una sola vez
+    if (g) { cfg.on = !!g.on; if (typeof g.cmdPuntos === 'number') cfg.cmdPuntos = g.cmdPuntos; if (typeof g.restoCmd === 'boolean') cfg.restoCmd = g.restoCmd; if (g.pesos && g.v === 4) cfg.pesos = g.pesos;
+       if (g.modo === 'pesos' || g.modo === 'metas') cfg.modo = g.modo; if (g.metasV === 5 && g.metas && g.metas.agi >= 0 && g.metas.vit >= 0) cfg.metas = { agi: g.metas.agi | 0, vit: g.metas.vit | 0 }; if (g.metasV === 5 && g.resto && g.resto.str >= 0 && g.resto.ene >= 0 && g.resto.str + g.resto.ene > 0) cfg.resto = { str: +g.resto.str, ene: +g.resto.ene };   // las proporciones viejas (v3 o menos) se reemplazan por las nuevas una sola vez
        if (g.minimoManual && g.minimo) { cfg.minimo = g.minimo; cfg.minimoManual = true; } }
   } catch (e) { /* nada */ }
   const guardar = () => { try { localStorage.setItem(KEY, JSON.stringify(cfg)); } catch (e) { /* nada */ } };
@@ -201,14 +201,17 @@
   // (cmdsDe): si hay puntos de sobra (libres >= lo que falta + 100) se apartan y se agrega un comando '/cmd N' (solo por chat: el índice de Comando del botón + no está verificado) y el resto se reparte con lo que queda.
   // Dark Lord vuelve a Comando 25 con cada reset, así que se repite. Fire Scream pide 70 de Comando. Lab > Puntos > Comando.
   const CMD_BASE = 25;
+  // v0.86.10 (pedido: "65k a todos y el resto todo a comando"): cuando VIT, AGI, STR y ENE ya no reciben más (tope 65.000) lo que sobra va a Comando por chat (no tiene botón +). Solo si sobran >= 200 (el chat tarda ~1,5 s por comando: no se manda de a un nivel). Tope de Comando 65.000.
+  const CMD_TOPE = 65000, CMD_RESTO_MIN = 200;
+  const extraCmd = (lb, usado) => { if (!cfg.restoCmd || !cfg.on) return 0; const sob = (lb | 0) - (usado | 0); if (sob < CMD_RESTO_MIN) return 0; return Math.max(0, Math.min(sob, CMD_TOPE - statAhora('cmd'))); };
   let cmdApartadoT = 0;      // cuándo se apartó por última vez: durante 60 s se sigue reintentando aunque queden justo los puntos apartados (el chat puede rechazar el primer intento)
   const faltaCmd = (libres) => { const meta = cfg.cmdPuntos | 0; if (meta <= 0 || !cfg.on) return 0; const falta = Math.max(0, meta - Math.max(0, statAhora('cmd') - CMD_BASE)); if (falta <= 0) return 0; const reciente = Date.now() - cmdApartadoT < 60000 * ESC; return libres >= falta + (reciente ? 0 : 100) ? falta : 0; };
   async function repartir() {
     const libres0 = libresAhora(), p0 = planActual(leer(), libres0, MINIMO_POR_COMANDO);
-    const cmds = CLAVES.filter((k) => p0[k] > 0); if (!cmds.length) return;
+    const cmds = CLAVES.filter((k) => p0[k] > 0); if (!cmds.length && !(extraCmd(libres0, faltaCmd(libres0)) > 0)) return;
     const grande = libres0 > 100;
     if (grande) L('repartiendo ' + libres0 + ': ' + cmds.map((k) => COMANDO[k] + ' ' + p0[k]).join(' · '));
-    const cmdsDe = (lb, minCmd = MINIMO_POR_COMANDO) => { const fc = faltaCmd(lb), p = planActual(leer(), lb - fc, minCmd), out = CLAVES.filter((k) => p[k] > 0).map((k) => ({ k, n: p[k] })); if (fc > 0) { cmdApartadoT = Date.now(); out.push({ k: 'cmd', n: fc }); L('Comando: aparto ' + fc + ' puntos para /cmd'); } return out; };
+    const cmdsDe = (lb, minCmd = MINIMO_POR_COMANDO) => { const fc = faltaCmd(lb), p = planActual(leer(), lb - fc, minCmd), out = CLAVES.filter((k) => p[k] > 0).map((k) => ({ k, n: p[k] })), ex = extraCmd(lb, fc + CLAVES.reduce((q, k) => q + p[k], 0)); if (fc + ex > 0) { cmdApartadoT = Date.now(); out.push({ k: 'cmd', n: fc + ex }); L('Comando: aparto ' + (fc + ex) + ' puntos para /cmd' + (ex > 0 ? ' (' + ex + ' de resto)' : '')); } return out; };
     const tIni = Date.now();
     const r = await repartirRobusto(cmdsDe, { activo: () => cfg.on, maxMs: 240000, log: L, minSiguientes: umbral() });
     total += r.puestos; const s = leer();
@@ -274,6 +277,7 @@
   const danoEstimado = (st = leer()) => Math.round((st.str * 0.2274 + st.ene * 0.1137 + 251) * (2 + st.ene / 2000));     // ajustado con las hojas de personaje del 397 y 398 (daño relativo, no el número de la pantalla)
   window.__stats = {
     danoEstimado,
+    restoCmd: (v) => { if (v != null) { cfg.restoCmd = !!v; guardar(); } return cfg.restoCmd; },
     setCmd: (n) => { cfg.cmdPuntos = Math.max(0, Math.min(5000, n | 0)); guardar(); return cfg.cmdPuntos; }, cmdPuntos: () => cfg.cmdPuntos,
     mover, repartirRobusto, sumar, asignacion: () => ({ ...ASIG, cmd_meta: cfg.cmdPuntos, cmd_actual: statAhora('cmd'), cmd_falta_ahora: faltaCmd(libresAhora()), boton_vivo: botonVivo(), ultimas_rondas: rondasLog.slice(-40) }), setEscala: (x) => { ESC = +x > 0 ? +x : 1; },
     plan, planMetas, cfg, TOPES,

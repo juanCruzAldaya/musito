@@ -76,7 +76,7 @@
         <div class="f"><b>Party</b> <button data-a="grp" title="Invita a los de cerca (tecla F7). Los de tu clan entran siempre, sean PK o no">Invitar cercanos F7</button><button data-a="grv">Ver grupo</button></div>
         <div class="f"><b>Joyas</b> <button data-a="joy">Ver</button><button data-a="joyd">Depositar</button><button data-a="joyr">Retirar…</button> <button data-a="f6s" title="F6: 10 Bless, 10 Soul y 10 Chaos sueltas">F6 sueltas</button><button data-a="f6p" title="F6: 1 pack de Bless, 1 de Soul y 10 Chaos sueltas">F6 packs</button></div>
         <div class="f"><b>Probar</b> <button data-a="scp" title="Tira Summon ahora">Summon</button><button data-a="bfp" title="Lanza el buff de crítico ahora">Buff</button><button data-a="cmar" title="Deja una marca en la caja negra">Marcar: está mal</button></div>
-        <div class="f"><b>Puntos</b> <button data-a="pt_m" title="Reparto por metas: VIT hasta 65.000 primero, después STR y ENE al tope de 65.000 (50/50 si faltan puntos), 500 de Comando y lo que sobre a AGI (y si todo está lleno, a VIT). Rige desde el próximo reparto (el del reset)">Metas: VIT 65k primero / STR y ENE 65k / resto AGI</button><button data-a="pt_n" title="Cambiar los números de las metas">Cambiar…</button><button data-a="pt_o" title="Vuelve al reparto proporcional de antes (STR 33 / AGI 21 / VIT 7,5 / ENE 39 %)">Reparto anterior</button><button data-a="pt_v">Ver</button> <button data-a="pt_on">Auto ON</button><button data-a="pt_off">OFF</button></div>
+        <div class="f"><b>Puntos</b> <button data-a="pt_m" title="Reparto por metas: VIT y AGI hasta 65.000, STR y ENE hasta 65.000 (50/50 si faltan puntos), 500 de Comando y TODO lo que sobre a Comando (por chat, cuando juntan 200 o más). Rige desde el próximo reparto (el del reset)">Metas: 65k a todos / resto a Comando</button><button data-a="pt_n" title="Cambiar los números de las metas">Cambiar…</button><button data-a="pt_o" title="Vuelve al reparto proporcional de antes (STR 33 / AGI 21 / VIT 7,5 / ENE 39 %)">Reparto anterior</button><button data-a="pt_v">Ver</button> <button data-a="pt_on">Auto ON</button><button data-a="pt_off">OFF</button></div>
         <div class="f"><b>PVP a uno solo</b> <button data-a="pvu" title="Te pide el nombre y ataca SOLO a ese jugador (nunca a otro, ni a tu party/clan). Apretalo de nuevo para apagar">Elegir nombre…</button></div>
         <div class="f"><b>A quién ataqué</b> <button data-a="atq" title="Últimos jugadores a los que les tiraste hechizos (nombre, cuántos, si murió, de tu party/clan). Queda guardado aunque recargues; la lista completa va en la caja negra">Ver</button></div>
       </details></div>`;
@@ -96,10 +96,10 @@
       if (a.startsWith('pt_')) {
         const S = window.__stats; if (!S) return anotar('stats.js no cargó (recargá la extensión)');
         if (a === 'pt_on' || a === 'pt_off') S.activar(a === 'pt_on');
-        if (a === 'pt_m') S.setMetas(0, 65000, 50, 50);
+        if (a === 'pt_m') S.setMetas(65000, 65000, 50, 50); S.restoCmd(true);
         if (a === 'pt_o') S.setModo('pesos');
         if (a === 'pt_n') {
-          const c = S.cfg, r = window.prompt('Metas de puntos: AGI total, VIT total, % de STR y % de ENE del resto (el Comando se maneja aparte). Ej: 0 65000 50 50', [c.metas.agi, c.metas.vit, c.resto.str, c.resto.ene].join(' '));
+          const c = S.cfg, r = window.prompt('Metas de puntos: AGI total, VIT total, % de STR y % de ENE del resto (el Comando se maneja aparte). Ej: 65000 65000 50 50', [c.metas.agi, c.metas.vit, c.resto.str, c.resto.ene].join(' '));
           const n = r && r.trim().split(/[\s,]+/).map(Number); if (!n || n.length < 4 || n.some((x) => !(x >= 0)) || n[2] + n[3] <= 0) return anotar('Cancelado o formato no válido');
           S.setMetas(n[0], n[1], n[2], n[3]);
         }
