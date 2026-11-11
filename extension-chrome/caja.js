@@ -133,6 +133,7 @@
       tiendas_npc: window.__tiendas ? window.__tiendas.lista() : null,
       summon_chat: window.__grupo && window.__grupo.summonChat ? window.__grupo.summonChat.stats() : null,
       buff_critico: window.__grupo && window.__grupo.buff ? window.__grupo.buff.stats() : null,
+      auto_clan: window.__grupo && window.__grupo.autoClan ? window.__grupo.autoClan.stats() : null,
       modo_final: window.__modo ? window.__modo.texto() : null,
       stats_log: window.__stats ? window.__stats.bitacora() : null,
       asignacion_stats: window.__stats && window.__stats.asignacion ? window.__stats.asignacion() : null,

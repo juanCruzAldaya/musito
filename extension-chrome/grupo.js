@@ -30,7 +30,7 @@
   setInterval(() => {
     try {
       if (!M() || M()._MuWebGetSceneFlag() !== 5) return;
-      const g = grupoActual(), ahora = nombresDe(g), yo = texto('GetPlayerNameUtf8');
+      const g = grupoActual(), ahora = nombresDe(g), yo = texto('GetHeroNameUtf8');
       if (previos) {
         const cerca = new Set(cercanos().map((c) => c.nombre));
         for (const n of ahora) if (!previos.has(n) && n !== yo) { eventos.push({ t: Date.now(), tipo: 'entró', nombre: n }); const r = invitados.get(n); if (r) r.unido = true; }
@@ -71,6 +71,50 @@
     ultimo = hechos.length ? 'invité a ' + hechos.join(', ') + ' · ya están en tu grupo: ' + (unidos.join(', ') || 'nadie todavía') + (faltan.length ? ' · sin respuesta: ' + faltan.join(', ') : '') + (sinEnvio.length ? ' · el juego no confirmó el envío a: ' + sinEnvio.join(', ') + ' (puede ser falso aviso)' : '') : 'nadie para invitar';
     return { ok: true, hechos };
   }
+  // ---- AUTO-INVITAR AL CLAN (v0.88.0) ----
+  // Pedido: "si se acerca uno del clan que no está en el party y hay lugar y soy líder, que lo invite". Cada 1,5 s, si está prendido: soy el LÍDER (el primero de la lista del grupo es mi nombre), el grupo tiene lugar (< MAX_GRUPO),
+  // hay alguien cerca que figura en la lista de mi CLAN, que no está en el grupo y que no invité hace poco. Es lo mismo que el F7 (RunPlayerCommand(idx, 2)) pero de a UNO y con todo vuelto a leer justo antes de mandar.
+  // SEGURIDAD (caja 34: un F7 deshizo el grupo entero de 10 jugadores): nunca a mí mismo, nunca a alguien cuyo nombre aparezca en el texto del grupo (se busca como texto suelto, sin importar mayúsculas), el índice se vuelve a buscar por nombre
+  // en el instante del envío, y si después de invitar el grupo desaparece o dejo de ser líder, se APAGA solo y queda anotado. Apagado de fábrica. NO está probado en el juego.
+  const MAX_GRUPO = 10;      // en la caja 34 el grupo llegó a 10 integrantes; el máximo real del servidor no está verificado
+  const AUTO = { on: false, ocupado: false, ult: 0, enviados: 0, desarmes: 0, ultTxt: '', log: [] };
+  try { const s = JSON.parse(localStorage.getItem('muAutoClanV1') || 'null'); if (s && s.v === 1 && typeof s.on === 'boolean') AUTO.on = s.on; } catch (e) { /* nada */ }
+  const guardarAUTO = () => { try { localStorage.setItem('muAutoClanV1', JSON.stringify({ v: 1, on: AUTO.on })); } catch (e) { /* nada */ } };
+  const LOGA = (t) => { AUTO.ultTxt = t; AUTO.log.push({ t: new Date().toISOString().slice(11, 19), txt: t }); if (AUTO.log.length > 40) AUTO.log.shift(); };
+  const miNombre = () => (texto('GetHeroNameUtf8') || '').trim();
+  // quién soy dentro del grupo: 'lider' (primero de la lista), 'miembro' o 'sin grupo'; y los nombres en orden
+  function miGrupo() {
+    const yo = miNombre(), nombres = [...nombresDe(grupoActual())];
+    if (!yo || !nombres.length) return { rol: 'sin grupo', nombres, yo };
+    return { rol: nombres[0].toLowerCase() === yo.toLowerCase() ? 'lider' : (nombres.some((n) => n.toLowerCase() === yo.toLowerCase()) ? 'miembro' : 'sin grupo'), nombres, yo };
+  }
+  const puedeAuto = (nombre) => { const r = invitados.get(nombre), ahora = Date.now(); if (r && r.unido) { const sal = salio.get(nombre); return !(sal && ahora - sal < 60000); } return !(r && ahora - r.t < ENFRIA_MS); };
+  async function tickAuto() {
+    if (!AUTO.on || AUTO.ocupado || ocupado || !M() || M()._MuWebGetSceneFlag() !== 5 || !(M()._MuWebGetPlayerLife() > 0) || Date.now() - AUTO.ult < 3000) return;
+    const mg = miGrupo(); if (mg.rol !== 'lider' || mg.nombres.length >= MAX_GRUPO) return;
+    const clan = texto('GetGuildMembersUtf8'); if (!clan) return;
+    const yoL = mg.yo.toLowerCase(), gl = grupoActual().toLowerCase();
+    const elegible = (c) => c.nombre && c.nombre.toLowerCase() !== yoL && estaEn(clan, c.nombre) && !gl.includes(c.nombre.toLowerCase()) && puedeAuto(c.nombre);
+    const c0 = cercanos().find(elegible); if (!c0) return;
+    AUTO.ocupado = true; ocupado = true; AUTO.ult = Date.now();
+    try {
+      // volver a leer TODO justo antes de mandar
+      const mg2 = miGrupo(), gl2 = grupoActual().toLowerCase(), c = cercanos().find((x) => x.nombre === c0.nombre);
+      if (!c || mg2.rol !== 'lider' || mg2.nombres.length >= MAX_GRUPO || gl2.includes(c.nombre.toLowerCase()) || c.nombre.toLowerCase() === mg2.yo.toLowerCase()) return;
+      const antes = mg2.nombres.length, ok = (M()._MuWebRunPlayerCommand(c.idx | 0, CMD_GRUPO) | 0) === 1;
+      invitados.set(c.nombre, { t: Date.now(), unido: false }); AUTO.enviados++;
+      LOGA('invité a ' + c.nombre + ' (del clan, cerca; grupo de ' + antes + ')' + (ok ? '' : ' · el juego no confirmó el envío'));
+      setTimeout(() => {      // control de seguridad: 6 s después el grupo tiene que seguir en pie y yo seguir siendo líder
+        try {
+          const d = miGrupo(), r = invitados.get(c.nombre);
+          if (d.rol !== 'lider' || d.nombres.length < antes - 1) { AUTO.on = false; AUTO.desarmes++; guardarAUTO(); LOGA('¡SE DESARMÓ EL GRUPO después de invitar a ' + c.nombre + ' (antes ' + antes + ', ahora ' + d.nombres.length + ', rol ' + d.rol + ')! Apagué el auto-invitar'); }
+          else if (r && estaEn(grupoActual(), c.nombre)) { r.unido = true; LOGA(c.nombre + ' entró al grupo'); }
+        } catch (e) { /* nada */ }
+      }, 6000);
+    } finally { AUTO.ocupado = false; ocupado = false; }
+  }
+  setInterval(() => { tickAuto().catch((e) => { AUTO.ocupado = false; ocupado = false; LOGA('error: ' + String(e && e.message || e).slice(0, 80)); }); }, 1500);
+  const AUTOAPI = { on: (v) => { if (v != null) { AUTO.on = !!v; guardarAUTO(); LOGA(AUTO.on ? 'ENCENDIDO' : 'APAGADO'); } return AUTO.on; }, stats: () => ({ activo: AUTO.on, max_grupo: MAX_GRUPO, enviados: AUTO.enviados, desarmes: AUTO.desarmes, ultimo: AUTO.ultTxt, yo: miNombre(), rol: miGrupo().rol, integrantes: miGrupo().nombres.length, registro: AUTO.log.slice(-12) }) };
   // ---- SUMMON A PEDIDO DEL CHAT (v0.79.0) ----
   // Pedido: "leer el chat; cuando dicen summon / summonear / jala / jalar: frenar la Sostenida, tirar Summon y seguir con la Sostenida". Lee los mensajes de chat que manda el servidor (C1 0x00: remitente de 10 bytes y
   // el texto desde el byte 13; el chat del grupo, del clan y el público llegan igual: el servidor los distingue por el prefijo del texto). Si el mensaje trae una de las palabras y el que escribe es de tu grupo (por defecto;
@@ -274,7 +318,7 @@
   window.__grupoInvocarOnChat = (u) => { onChat(u); onEfecto(u); };       // siempre apunta a la instancia más nueva (recarga en caliente)
   window.__grupo = {
     invocar: (m) => invocar(m || 'a pedido'), summonChat: { on: (v) => { if (v != null) { INV.on = !!v; guardarINV(); } return INV.on; }, modo: (m) => { if (['party', 'grupo', 'miembros', 'cualquiera'].includes(m)) { INV.modo = m; guardarINV(); } return INV.modo; }, demora: (a, b) => { if (a >= 0 && b >= a && b <= 30000) { INV.demMin = a | 0; INV.demMax = b | 0; } return [INV.demMin, INV.demMax]; }, espera: (ms) => { if (ms >= 0 && ms <= 20000) { INV.esperaMs = ms | 0; guardarINV(); } return INV.esperaMs; }, stats: () => ({ activo: INV.on, modo: INV.modo, espera_ms: INV.esperaMs, demora_al_azar_ms: [INV.demMin, INV.demMax], ultima_demora_ms: INV.ultDem, canales: { ...INV.canales }, prefijos_vistos: { ...INV.prefijos }, chats_leidos: INV.leidos, con_palabra_clave: INV.coinciden, summon_lanzados: INV.lanzados, fallos: INV.fallos, ignorados: INV.ignorados, ultimo: INV.ult, enfriamiento_s: Math.ceil(cd63() / 1000), registro: INV.log.slice(-30), en_cola: INV.pend ? INV.pend.motivo : null, encolados: INV.encolados, clic_derecho_fallos_seguidos: INV.derechoMal }) },
-    buff: BUFAPI, cercanos, candidatos, invitar, grupoActual, eventos: () => eventos.slice(), resumen: () => ultimo,
-    ver: () => 'Grupo (crudo): ' + (grupoActual() || '(vacío)').replace(/\s+/g, ' ').slice(0, 200) + ' · eventos: ' + (eventos.slice(-6).map((e) => new Date(e.t).toLocaleTimeString('es-AR', { hour12: false }) + ' ' + e.nombre + ' ' + e.tipo + (e.tipo === 'salió' ? (e.cerca ? ' (estaba cerca)' : ' (no estaba cerca)') : '')).join(' | ') || 'ninguno todavía'),
+    buff: BUFAPI, autoClan: AUTOAPI, cercanos, candidatos, invitar, grupoActual, eventos: () => eventos.slice(), resumen: () => ultimo,
+    ver: () => 'Auto-invitar clan: ' + (AUTO.on ? 'ENCENDIDO' : 'apagado') + (AUTO.ultTxt ? ' (' + AUTO.ultTxt + ')' : '') + ' · Grupo (crudo): ' + (grupoActual() || '(vacío)').replace(/\s+/g, ' ').slice(0, 200) + ' · eventos: ' + (eventos.slice(-6).map((e) => new Date(e.t).toLocaleTimeString('es-AR', { hour12: false }) + ' ' + e.nombre + ' ' + e.tipo + (e.tipo === 'salió' ? (e.cerca ? ' (estaba cerca)' : ' (no estaba cerca)') : '')).join(' | ') || 'ninguno todavía'),
   };
 })();
