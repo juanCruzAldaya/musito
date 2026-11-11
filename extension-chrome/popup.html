@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Vigía</title>
+<style>
+ body{font:13px sans-serif;width:300px;margin:10px}
+ label{display:block;margin:6px 0}
+ input[type=password]{width:100%;box-sizing:border-box}
+ button{margin:4px 4px 0 0}
+ #msg{margin-top:8px;color:#06c;min-height:1.2em}
+</style></head><body>
+<h3 style="margin:0 0 8px">Vigía MuMagdalenas</h3>
+<label><input type="checkbox" id="vigia"> Volver a prender el Helper si se apaga solo</label>
+<label><input type="checkbox" id="hechizo"> Mantener Fire Burst como único ataque del Helper</label>
+<label><input type="checkbox" id="joyas"> Depositar joyas solas en el banco (cada 20 segundos)</label>
+<label><input type="checkbox" id="avisos"> Mandar avisos a Discord</label>
+<label>Webhook de Discord
+<input type="password" id="webhook" placeholder="(pegalo acá; queda guardado en este navegador)" autocomplete="off"></label>
+<button id="guardar">Guardar</button><button id="prueba">Enviar prueba</button><button id="borrar">Borrar webhook</button>
+<div id="msg"></div>
+<script src="popup.js"></script>
+</body></html>

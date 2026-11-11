@@ -1,0 +1,204 @@
+// Banco de joyas: usa EXACTAMENTE el mismo comando de chat que la ventana del juego (/jbank s|a|w ...).
+// 's' = ver estado (solo lectura), 'a' = depositar todo el inventario. Nunca retira. Depósito automático (cada 20 s): apagado de fábrica.
+(() => {
+  'use strict';
+  // Recarga en caliente: los intervalos se registran para poder cortarlos al reinyectar el módulo sin recargar la página (ver background.js)
+  const setInterval = (f, ms) => { const id = window.setInterval(f, ms); (window.__muIds = window.__muIds || []).push(id); return id; };
+  const NOMBRES = ['Bless', 'Soul', 'Chaos', 'Life', 'Creation', 'Guardian', 'Gemstone', 'Harmony', 'Lower refine', 'Higher refine', 'Socket', 'Rare'];
+  const INTERVALO_MS = 20000;   // depósito automático: cada 20 s (el comando 'a' ya devuelve el estado de las 12 joyas)
+  let est = null, pend = null, ultimaLectura = 0, ultimoDeposito = 0, ultimoResultado = '';
+  // El interruptor "depositar solo" (popup) se recuerda en localStorage y se escucha directo del puente: no depende de que vigia.js reenvíe la configuración
+  const KEY_AUTO = 'muJoyasAutoV1';
+  let auto = (() => { try { const v = localStorage.getItem(KEY_AUTO); if (v != null) return v === '1'; } catch (e) { /* nada */ } return window.__muJoyasAuto === true; })();
+  const guardarAuto = () => { try { localStorage.setItem(KEY_AUTO, auto ? '1' : '0'); } catch (e) { /* nada */ } };
+  const bitacoraJ = [], t0 = Date.now(); let ultMotivo = '', ultMotivoT = 0, vivoJ = true;
+  const L = (t) => { bitacoraJ.push({ t_ms: Date.now() - t0, txt: t }); if (bitacoraJ.length > 80) bitacoraJ.shift(); };
+  const M = () => window.Module;
+  const suma = (k) => (est ? est.filas.reduce((a, f) => a + (f ? f[k] : 0), 0) : 0);
+
+  function mandar(accion, args = '0 1 0') {
+    if (pend && Date.now() - pend.t < 12000) return false;
+    pend = null;
+    const nonce = crypto.randomUUID().replace(/-/g, '');
+    let ptr = 0;
+    try {
+      ptr = window.muAllocateUtf8(`/jbank ${accion} ${args} v1 ${nonce}`);
+      if (M()._MuWebSubmitChatUtf8(ptr, 0, 0) !== 1) return false;
+    } catch (e) { return false; } finally { try { if (ptr) M()._free(ptr); } catch (e) { /* nada */ } }
+    pend = { nonce, t: Date.now(), accion, filas: [] };
+    return true;
+  }
+
+  function observar(m) {
+    const p = m.trim().split(' ');
+    if (!pend || p[0] !== '_JB' || p[1] !== pend.nonce) return;
+    if (p[2] === 'row') {
+      const [k, bank, have, free] = p.slice(3).map(Number);
+      if (k >= 0 && k < 12) pend.filas[k] = { bank, have, free };
+    } else if (p[2] === 'done') {
+      ultimoResultado = pend.accion + ':' + ({ ok: 'listo', balance: 'no hay tantas en el banco', inventory: 'no hay tantas en el inventario', space: 'NO HAY ESPACIO en el inventario', busy: 'cerrá comercio/NPC/ventanas y reintentá', unavailable: 'banco no disponible' }[p[3]] || p[3]);
+      if (pend.filas.filter(Boolean).length === 12) est = { t: Date.now(), filas: pend.filas };
+      L('respuesta ' + ultimoResultado + (est ? ' · inventario ' + suma('have') + ' · banco ' + suma('bank') : ''));
+      if (pend.accion === 'a') ultimaLectura = 0; // releer enseguida
+      pend = null;
+    }
+  }
+
+  // El juego define muJewelBankNotice al cargar bank.js: lo envolvemos sin cambiar su comportamiento.
+  window.__joyasObservar = (m) => { try { observar(String(m)); } catch (e) { /* nada */ } };   // siempre apunta a la instancia más nueva (recarga en caliente)
+  setInterval(() => {
+    const f = window.muJewelBankNotice;
+    if (typeof f !== 'function' || f.__joyas) return;
+    const w = function (m) { try { if (window.__joyasObservar) window.__joyasObservar(m); } catch (e) { /* nada */ } return f.apply(this, arguments); };
+    w.__joyas = true; window.muJewelBankNotice = w;
+  }, 1000);
+
+  // devuelve null si se puede mandar el comando, o el motivo por el que no
+  function motivoBloqueo() {
+    const M_ = M();
+    if (!M_) return 'sin cliente';
+    if (M_._MuWebGetSceneFlag() !== 5) return 'fuera del juego';
+    if (M_._MuWebGetPlayerLife() <= 0) return 'muerto';
+    if (M_._MuWebGetBlockingUiOpen() === 1) return 'hay una ventana del juego abierta';
+    if (M_._MuWebShopWindowOpen() === 1) return 'tienda abierta';
+    const dlg = document.querySelector('dialog[open]'); if (dlg) return 'diálogo abierto (' + (dlg.id || dlg.className || 'sin id') + ')';   // no pisar la ventana del banco si la tenés abierta
+    return null;
+  }
+  const libre = () => motivoBloqueo() === null;
+
+  setInterval(() => {
+    try {
+      const ahora = Date.now();
+      if (!auto) { if (ahora - ultMotivoT > 60000) { ultMotivoT = ahora; L('depósito automático APAGADO (interruptor del popup)'); } return; }
+      const bloq = motivoBloqueo();
+      if (bloq) { if (bloq !== ultMotivo || ahora - ultMotivoT > 60000) { ultMotivo = bloq; ultMotivoT = ahora; L('no deposito: ' + bloq); } return; }
+      if (pend) { if (ahora - pend.t > 15000) { L('el juego no respondió al comando (nonce ' + pend.nonce.slice(0, 6) + '): lo libero'); pend = null; } return; }
+      if (ahora - ultimoDeposito >= INTERVALO_MS) { if (mandar('a')) { ultimoDeposito = ahora; L('envié /jbank a'); } else L('no pude mandar el comando por el chat'); }
+    } catch (e) { /* no frenar */ }
+  }, 2000);
+
+  // Retirar del banco: /jbank w <joya 0-11> <cantidad> <0 sueltas | 1 packs (solo joyas 0-9)> — el mismo comando que la ventana "Retirar" del juego.
+  function retirar(idx, cantidad, formato = 0) {
+    idx = idx | 0; cantidad = cantidad | 0; formato = formato ? 1 : 0;
+    if (idx < 0 || idx > 11) return { ok: false, motivo: 'joya inválida (0-11)' };
+    if (cantidad < 1 || cantidad > 100000) return { ok: false, motivo: 'cantidad inválida (1-100000)' };
+    if (formato === 1 && idx >= 10) return { ok: false, motivo: 'Socket y Rare solo salen sueltas' };
+    const f = est && est.filas[idx];
+    if (f && cantidad > f.bank && formato === 0) return { ok: false, motivo: 'en el banco tenés solo ' + f.bank };
+    if (f && formato === 0 && Number.isInteger(f.free) && cantidad > f.free) return { ok: false, motivo: 'el inventario tiene lugar para ' + f.free + ' sueltas (probá menos o formato 1 = packs)' };
+    if (!libre()) return { ok: false, motivo: 'hay una ventana abierta (cerrala: banco, tienda, mensaje) o estás muerto' };
+    return mandar('w', idx + ' ' + cantidad + ' ' + formato) ? { ok: true } : { ok: false, motivo: 'ocupado, reintentá' };
+  }
+  const AC = new AbortController();
+  window.addEventListener('message', (e) => { if (!vivoJ || e.source !== window || !e.data || !e.data.__muvigiaCfg || !e.data.cfg) return; auto = !!e.data.cfg.joyas; guardarAuto(); L('configuración del popup: depositar solo = ' + (auto ? 'SÍ' : 'NO')); }, { signal: AC.signal });
+  (window.__muLimpiar = window.__muLimpiar || []).push(() => { window.__muJoyasAuto = auto; vivoJ = false; AC.abort(); });
+  // El interruptor de "depositar solo" viene del popup (chrome.storage) y lo aplica vigia.js al recibir la configuración. Al reinyectar este módulo en
+  // caliente la instancia nueva arrancaba con auto = false y nadie volvía a mandar la configuración: por eso dejaba de depositar. Se la pedimos de nuevo.
+  try { window.postMessage({ __muvigiaPide: true }, '*'); } catch (e) { /* nada */ }
+  // ---- ESCÁNER DE TIENDAS DE NPC (v0.77.0) ----
+  // Pedido: "en Magdalenas lo venden, el tema es dónde" (Scroll of Fire Scream). El cliente no tiene una función para leer lo que vende un NPC, pero el servidor manda la lista al abrir la tienda (C2 0x31: tipo, cantidad y
+  // por item 1 byte de casilla + los datos del item; datos: byte0>>4 = grupo, byte1 = índice, byte2 = nivel, igual que los items del piso). Esto anota CADA tienda que abrís (nombre del NPC, mapa, posición, items) y avisa si vende el
+  // Scroll of Fire Scream (12:35). Hay que abrir las tiendas a mano (hablar con el NPC): no manda nada propio. Lab > Cajas del piso > "Tiendas vistas".
+  const KEY_TIENDAS = 'muTiendasV1', TIENDAS = (() => { try { return JSON.parse(localStorage.getItem(KEY_TIENDAS) || '[]'); } catch (e) { return []; } })();
+  const BUSCADOS = { '12:35': 'Scroll of Fire Scream' };
+  let tiendasEscuchando = false;
+  function onTienda(u) {
+    try {
+      if (!vivoJ || !u || u[0] !== 0xC2 || u[3] !== 0x31 || u.length < 7) return;
+      const tipo = u[4], n = u[5]; if (!n) return;
+      const L = Math.round((u.length - 6) / n); if (L < 4 || 6 + n * L !== u.length) { L2('tienda: no pude leer la lista (largo ' + u.length + ', ' + n + ' items)'); return; }
+      const items = [], hay = [];
+      for (let i = 0; i < n; i++) { const o = 6 + i * L, g = u[o + 1] >> 4, ix = u[o + 2], lv = u[o + 3], k = g + ':' + ix; items.push(k + (lv ? '+' + lv : '')); if (BUSCADOS[k]) hay.push(BUSCADOS[k]); }
+      const m = M(); let npc = ''; try { const f = m._MuWebGetNearbyNpcNameUtf8, p = f ? f() | 0 : 0; npc = p ? m.UTF8ToString(p) : ''; } catch (e) { /* nada */ }
+      const reg = { hora: new Date().toISOString(), npc: npc || '(NPC sin nombre)', mapa: m._MuWebGetMapIndex(), x: m._MuWebGetHeroX(), y: m._MuWebGetHeroY(), tipo, items, vende: hay };
+      const ya = TIENDAS.findIndex((t) => t.npc === reg.npc && t.mapa === reg.mapa && t.tipo === reg.tipo); if (ya >= 0) TIENDAS[ya] = reg; else TIENDAS.push(reg);
+      if (TIENDAS.length > 60) TIENDAS.shift();
+      try { localStorage.setItem(KEY_TIENDAS, JSON.stringify(TIENDAS)); } catch (e) { /* nada */ }
+      L2('tienda de "' + reg.npc + '" (mapa ' + reg.mapa + ' en ' + reg.x + ',' + reg.y + '): ' + n + ' items' + (hay.length ? ' · ¡VENDE ' + hay.join(', ') + '!' : ''));
+      if (hay.length) window.postMessage({ __muvigia: true, clave: 'tienda_fs', texto: '¡' + reg.npc + ' (mapa ' + reg.mapa + ', ' + reg.x + ',' + reg.y + ') vende ' + hay.join(', ') + '!', grave: false }, '*');
+    } catch (e) { /* nada */ }
+  }
+  const L2 = (t) => L(t);
+  setInterval(() => { try { const Pq = window.__paquetes; if (!tiendasEscuchando && Pq && Pq.alRecibir) { tiendasEscuchando = true; Pq.alRecibir(onTienda); } } catch (e) { /* nada */ } }, 1500);
+  window.__tiendas = {
+    lista: () => TIENDAS.map((t) => ({ ...t })),
+    texto: () => (TIENDAS.length ? TIENDAS.map((t) => '"' + t.npc + '" (mapa ' + t.mapa + ', ' + t.x + ',' + t.y + '): ' + t.items.length + ' items' + (t.vende.length ? ' · VENDE ' + t.vende.join(', ') : '')).join(' | ') : 'Todavía no abriste ninguna tienda de NPC (hablá con el NPC para abrirla).'),
+    borrar: () => { TIENDAS.length = 0; try { localStorage.removeItem(KEY_TIENDAS); } catch (e) { /* nada */ } },
+  };
+  // ---- CAJAS DEL PISO (v0.72.0): juntar rápido los items que elige el usuario (por defecto Box of Kundun +5) ----
+  // El cliente ya junta solo lo que cae cerca (~1 pedido/s). Esto va a buscar, sin forjar paquetes, SOLO los items con la firma elegida: camina hasta la casilla del item (pasar por encima lo levanta),
+  // sin pulsos mientras camina, y la correa del modo lo trae de vuelta al ancla. Firma = grupo:índice y nivel que trae el aviso de item caído (C2 0x20: byte0>>4 = grupo, byte1 = índice, byte2 = nivel).
+  // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
+  const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) LOOT.firmas = s.firmas; } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ on: LOOT.on, firmas: LOOT.firmas })); } catch (e) { /* nada */ } };
+  const firmaTxt = (f) => f.g + ':' + f.i + (f.lv == null ? ' (cualquier nivel)' : ' nivel ' + f.lv);
+  const coincide = (it) => it.g !== undefined && LOOT.firmas.some((f) => it.g === f.g && it.i === f.i && (f.lv == null || it.lv === f.lv));
+  const chebJ = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  const heroJ = () => { const m = M(); return { x: m._MuWebGetHeroX(), y: m._MuWebGetHeroY() }; };
+  async function juntar(it) {
+    LOOT.ocupado = true; LOOT.objetivos++;
+    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo';
+    try {
+      Mo.viaje(true);
+      while (Date.now() - t0 < 7000 && vivoJ && LOOT.on) {
+        const aun = B.suelo().find((x) => x.id === it.id), h = heroJ();
+        if (!aun) { ok = chebJ(it, h) <= 2; razon = ok ? 'juntado' : 'lo juntó otro'; break; }
+        if (M()._MuWebGetPlayerLife() <= 0) { razon = 'murió'; break; }
+        const r = Mv.paso(it.x, it.y, 0);
+        if (r === 'sin calibrar' || r === 'sin dirección') { razon = r; break; }
+        if (r === 'llegó') { if (!llegoT) llegoT = Date.now(); else if (Date.now() - llegoT > 900) { razon = 'llegó pero no lo levantó'; break; } }
+        await new Promise((res) => setTimeout(res, 60));
+      }
+    } catch (e) { razon = 'error'; } finally {
+      try { Mv.parar(); } catch (e) { /* nada */ }
+      try { Mo.viaje(false); } catch (e) { /* nada */ }
+      LOOT.ocupado = false;
+    }
+    if (ok) { LOOT.juntados++; LOOT.msViaje.push(Date.now() - t0); if (LOOT.msViaje.length > 100) LOOT.msViaje.shift(); } else if (razon === 'lo juntó otro') LOOT.otros++; else { LOOT.perdidos++; LOOT.ign.set(it.id, Date.now() + 15000); }
+    LOOT.ult = razon + ' · ' + it.g + ':' + it.i + '+' + it.lv + ' en (' + it.x + ',' + it.y + ') · ' + (Date.now() - t0) + ' ms';
+    L('piso: ' + LOOT.ult);
+  }
+  setInterval(() => {
+    try {
+      const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, m = M();
+      if (!vivoJ || !B || !B.suelo || !m || m._MuWebGetSceneFlag() !== 5) return;
+      const lista = B.suelo(), ahora = Date.now();
+      lista.forEach((it) => {      // qué cae en este mapa (cada item una vez): sirve para descubrir la firma de la caja que busca el usuario
+        if (it.g === undefined) { LOOT.sinDatos++; return; }
+        if (LOOT.ids.has(it.id)) return;
+        LOOT.ids.add(it.id); if (LOOT.ids.size > 4000) LOOT.ids.clear();
+        const k = it.g + ':' + it.i + ':' + it.lv; LOOT.vistos.set(k, (LOOT.vistos.get(k) || 0) + 1);
+      });
+      LOOT.ign.forEach((v, k) => { if (v < ahora) LOOT.ign.delete(k); });
+      if (!LOOT.on || LOOT.ocupado || !Mo || !Mv || !Mo.viaje || !(Mv.tabla && Mv.tabla())) return;
+      if (!['sostener', 'pulsos', 'auto'].includes(Mo.deseado()) || m._MuWebGetPlayerLife() <= 0 || !libre()) return;
+      if (m._MuWebGetPlayerLifeMax && m._MuWebGetPlayerLife() < 0.4 * m._MuWebGetPlayerLifeMax()) return;
+      const h = heroJ();
+      const it = lista.filter((x) => coincide(x) && ahora - x.t < 120000 && chebJ(x, h) <= LOOT.radio && !(LOOT.ign.get(x.id) > ahora)).sort((p, q) => chebJ(p, h) - chebJ(q, h))[0];
+      if (it) juntar(it).catch(() => { LOOT.ocupado = false; });
+    } catch (e) { /* no frenar */ }
+  }, 100);
+  window.__loot = {
+    on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; },
+    firmas: () => LOOT.firmas.slice(), firmaTxt,
+    marcarMasCercano: () => {      // agrega la firma del item del piso más cercano al héroe (para enseñarle cuál es la caja)
+      const B = window.__bichos; if (!B || !B.suelo) return { ok: false, motivo: 'bichos.js no cargó' };
+      const h = heroJ(), it = B.suelo().filter((x) => x.g !== undefined).sort((p, q) => chebJ(p, h) - chebJ(q, h))[0];
+      if (!it) return { ok: false, motivo: B.suelo().length ? 'bichos.js viejo: apretá F5 en la página del juego' : 'no hay items en el piso' };
+      const f = { g: it.g, i: it.i, lv: it.lv }; if (!LOOT.firmas.some((x) => x.g === f.g && x.i === f.i && x.lv === f.lv)) LOOT.firmas.push(f);
+      guardarLoot();
+      return { ok: true, firma: firmaTxt(f), a: chebJ(it, h) };
+    },
+    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }]; guardarLoot(); return LOOT.firmas.slice(); },
+    cerca: () => { const B = window.__bichos, h = heroJ(); return B && B.suelo ? B.suelo().filter((x) => chebJ(x, h) <= 15).sort((p, q) => chebJ(p, h) - chebJ(q, h)).slice(0, 12).map((x) => (x.g === undefined ? '?' : x.g + ':' + x.i + ' niv ' + x.lv) + ' a ' + chebJ(x, h)) : []; },
+    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), radio: LOOT.radio, objetivos: LOOT.objetivos, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
+      firmas_vistas: [...LOOT.vistos].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => k + ' x' + n) }),
+  };
+  window.__joyas = {
+    mandar, retirar, nombres: NOMBRES, setAuto: (v) => { auto = !!v; guardarAuto(); L('setAuto(' + auto + ')'); }, bitacora: () => bitacoraJ.slice(), auto: () => auto,
+    totales: () => (est ? { banco: suma('bank'), inv: suma('have'), hace_s: Math.round((Date.now() - est.t) / 1000) } : null),
+    estado: () => est && { hace_s: Math.round((Date.now() - est.t) / 1000), tipos: est.filas.map((f, i) => ({ joya: NOMBRES[i], banco: f.bank, inventario: f.have, libres: f.free })) },
+    resumen: () => (auto ? '' : 'Joyas: depósito automático APAGADO · ') + (est ? 'Joyas: inventario ' + suma('have') + ' · banco ' + suma('bank') : 'Joyas: sin datos') + (ultimoResultado ? ' (' + ultimoResultado + ')' : ''),
+  };
+})();
