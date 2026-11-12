@@ -219,7 +219,7 @@
   // ---------- prueba de HABILIDADES (v0.80.0): ¿rinde más Fire Scream (78) que Fire Burst (508) como habilidad de la Sostenida? ----------
   // Alterna fases de `seg` segundos con cada habilidad (A B A B) parado atacando en el mismo lugar. Mide lo que importa (muertes y avisos de exp = lo que te da el servidor) y los paquetes de ataque
   // de cada tipo (C3 0x19 = hechizo a un blanco; C3 0x1E = ataque de área) + golpes recibidos (C1 0x11) por segundo, porque Fire Scream es de área y la telemetría vieja (que cuenta solo C3 0x19) no la ve.
-  const NOMBRE_HAB = { 508: 'Fire Burst', 78: 'Fire Scream' };
+  const NOMBRE_HAB = { 508: 'Fire Burst', 78: 'Fire Scream', 238: 'Chaotic Diseier' };
   async function probarHab(ids = [508, 78, 508, 78], seg = 60, avisar = () => {}) {
     const Mo = window.__modo, P = window.__paquetes;
     if (probando) return { ok: false, motivo: 'ya hay una prueba andando' };
