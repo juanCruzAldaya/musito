@@ -130,10 +130,17 @@
   // sin pulsos mientras camina, y la correa del modo lo trae de vuelta al ancla. Firma = grupo:índice y nivel que trae el aviso de item caído (C2 0x20: byte0>>4 = grupo, byte1 = índice, byte2 = nivel).
   // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
   const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) LOOT.firmas = s.firmas; } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ on: LOOT.on, firmas: LOOT.firmas })); } catch (e) { /* nada */ } };
+  // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
+  const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }, { g: 11, i: 51, lv: null }];
+  LOOT.firmas = LOOT.firmas.concat(PAEWANG); LOOT.nombres = [];
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 2, on: LOOT.on, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
+  const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const cacheNom = new Map();
+  const nombreItem = (g, i) => { const k = g * 1000 + i; if (cacheNom.has(k)) return cacheNom.get(k); let n = ''; try { const m = M(), p = m._MuWebGetItemNameUtf8 ? m._MuWebGetItemNameUtf8(g, i) | 0 : 0; n = p ? m.UTF8ToString(p) : ''; } catch (e) { n = ''; } cacheNom.set(k, n); return n; };
   const firmaTxt = (f) => f.g + ':' + f.i + (f.lv == null ? ' (cualquier nivel)' : ' nivel ' + f.lv);
-  const coincide = (it) => it.g !== undefined && LOOT.firmas.some((f) => it.g === f.g && it.i === f.i && (f.lv == null || it.lv === f.lv));
+  const coincide = (it) => it.g !== undefined && (LOOT.firmas.some((f) => it.g === f.g && it.i === f.i && (f.lv == null || it.lv === f.lv)) || (LOOT.nombres.length > 0 && (() => { const n = normN(nombreItem(it.g, it.i)); return !!n && LOOT.nombres.some((q) => n.includes(q)); })()));
   const chebJ = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   const heroJ = () => { const m = M(); return { x: m._MuWebGetHeroX(), y: m._MuWebGetHeroY() }; };
   async function juntar(it) {
@@ -190,9 +197,15 @@
       guardarLoot();
       return { ok: true, firma: firmaTxt(f), a: chebJ(it, h) };
     },
-    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }]; guardarLoot(); return LOOT.firmas.slice(); },
+    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }].concat(PAEWANG); LOOT.nombres = []; guardarLoot(); return LOOT.firmas.slice(); },
+    nombreItem,
+    // busca en TODOS los items del juego los que tengan ese texto en el nombre (idioma del cliente): { ok, encontrados: ['10:51 Guantes ...'] }
+    buscarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; const m = M(); if (!m || !m._MuWebGetItemNameUtf8) return { ok: false, motivo: 'el juego no tiene la consulta de nombres' }; const out = []; for (let g = 0; g <= 15; g++) for (let i = 0; i <= 511; i++) { const n = nombreItem(g, i); if (n && normN(n).includes(q)) out.push({ g, i, nombre: n }); if (out.length > 200) break; } return { ok: true, encontrados: out }; },
+    // agrega el texto como filtro: todo item del piso cuyo nombre lo contenga se va a buscar (cualquier nivel)
+    agregarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; if (!LOOT.nombres.includes(q)) LOOT.nombres.push(q); guardarLoot(); return { ok: true, nombres: LOOT.nombres.slice() }; },
+    quitarNombres: () => { LOOT.nombres = []; guardarLoot(); return true; },
     cerca: () => { const B = window.__bichos, h = heroJ(); return B && B.suelo ? B.suelo().filter((x) => chebJ(x, h) <= 15).sort((p, q) => chebJ(p, h) - chebJ(q, h)).slice(0, 12).map((x) => (x.g === undefined ? '?' : x.g + ':' + x.i + ' niv ' + x.lv) + ' a ' + chebJ(x, h)) : []; },
-    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), radio: LOOT.radio, objetivos: LOOT.objetivos, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
+    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), radio: LOOT.radio, objetivos: LOOT.objetivos, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
       firmas_vistas: [...LOOT.vistos].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => k + ' x' + n) }),
   };
   window.__joyas = {
