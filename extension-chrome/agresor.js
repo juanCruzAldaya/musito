@@ -457,11 +457,12 @@
   function atqCast(tid) {
     const ahora = Date.now(); let r = atq.get(tid);
     if (!r) {
-      if (monstruos.has(tid) || tid === heroId || !pos.has(tid)) return;      // bicho, yo mismo o un id que nunca vi moverse
-      r = { id: tid, primera: ahora, ultima: ahora, casts: 0, nombres: {}, mapa: call('GetMapIndex'), pk0: call('GetHeroPk'), placaT: 0, murio: false, pk: null, clan: false, party: false, avisado: false };
+      if (monstruos.has(tid) || tid === heroId) return;      // bicho o yo mismo. (v0.89.0: ya NO se exige haberlo visto moverse: un jugador parado nunca manda paquetes de movimiento y se perdía, caja 39: 57 hechizos al #977 sin registro)
+      r = { id: tid, primera: ahora, ultima: ahora, casts: 0, nombres: {}, mapa: call('GetMapIndex'), pk0: call('GetHeroPk'), placaT: 0, murio: false, pk: null, clan: false, party: false, avisado: false, visto_mover: pos.has(tid), vidaMin: 100, placa: '', hx: call('GetHeroX'), hy: call('GetHeroY'), logueado: false };
       atq.set(tid, r);
     }
     r.casts++; r.ultima = ahora;
+    if (r.casts === 3 && !r.logueado) { r.logueado = true; log('PVP: pegándole a #' + tid + (r.visto_mover ? '' : ' (nunca lo vi moverse)') + ' en (' + r.hx + ',' + r.hy + ') mapa ' + r.mapa); }
   }
   const nombreTop = (r) => { let m = null, n = 0; for (const k in r.nombres) if (r.nombres[k] > n) { n = r.nombres[k]; m = k; } return m; };
   setInterval(() => {
@@ -474,13 +475,15 @@
             if (nombre) { const j = jugadoresCerca().find((x) => x.nombre === nombre); if (j) { r.nombres[nombre] = (r.nombres[nombre] || 0) + 1; r.pk = j.pk; r.clan = j.clan; r.party = j.party; if (!r.avisado && (j.party || j.clan)) { r.avisado = true; log('OJO: estás atacando a ' + nombre + ' (de tu ' + (j.party ? 'party' : 'clan') + ')'); } } }
           }
           const m = muertos.get(id); if (m && m >= r.primera) r.murio = true;
+          { const vm = call('GetPlayerLifeMax'), vv = call('GetPlayerLife'); if (vm > 0 && vv >= 0) r.vidaMin = Math.min(r.vidaMin, Math.round(100 * vv / vm)); }
+          if (!r.placa) { const pl = str('GetTargetPlateUtf8'); if (pl) r.placa = pl.replace(/	/g, ' | ').slice(0, 80); }
           return;
         }
         atq.delete(id);
         const nombre = nombreTop(r);
         if (!nombre && r.casts < 3) return;      // un bicho que se coló o un hechizo suelto: no se anota
         const via = PVP.on ? (PVP.auto ? 'PVP automático' : 'PVP F10') : (peleando ? 'contraataque' : 'a mano o Sostenida');
-        const reg = { hora: new Date(r.primera).toISOString(), mapa: r.mapa, id, nombre: nombre || null, hechizos: r.casts, seg: Math.round((r.ultima - r.primera) / 1000), murio: r.murio, via, pk_mio_antes: r.pk0, pk_mio_despues: call('GetHeroPk'), pk_del_otro: r.pk, de_mi_clan: r.clan, de_mi_party: r.party };
+        const reg = { hora: new Date(r.primera).toISOString(), mapa: r.mapa, id, nombre: nombre || null, hechizos: r.casts, seg: Math.round((r.ultima - r.primera) / 1000), murio: r.murio, via, pk_mio_antes: r.pk0, pk_mio_despues: call('GetHeroPk'), pk_del_otro: r.pk, de_mi_clan: r.clan, de_mi_party: r.party, visto_mover: r.visto_mover, mi_vida_min_pct: r.vidaMin, placa_cruda: r.placa || null, desde_xy: [r.hx, r.hy], hechizos_por_s: Math.round(10 * r.casts / Math.max(1, (r.ultima - r.primera) / 1000)) / 10 };
         if (!nombre) reg.jugadores_cerca = jugadoresCerca().map((x) => x.nombre + (x.pk > 0 ? ' pk' + x.pk : '')).slice(0, 8);
         hist.push(reg); if (hist.length > 200) hist.shift(); guardarAtq();
         log('ATAQUÉ A ' + (nombre || 'un jugador sin nombre leído (#' + id + ')') + (r.party ? ' (de tu party)' : r.clan ? ' (de tu clan)' : '') + ' · ' + r.casts + ' hechizos en ' + reg.seg + ' s · ' + (r.murio ? 'MURIÓ' : 'no murió') + ' · ' + via + ' · mi PK ' + reg.pk_mio_antes + ' → ' + reg.pk_mio_despues);
@@ -511,7 +514,9 @@
       ecos: { hechizos_mios: nMisCasts, votos: Object.fromEntries(ecos) },
       golpes_fuertes: fuertes.map(({ ms, ...r }) => r),                                                         // bajones >= 15 % de vida+escudo de golpe, con los jugadores que había cerca
       ataques_vistos: [...ataques.values()].sort((p, q) => q.total - p.total).slice(0, 10).map((a) => ({ id: a.id, ataques: a.total, con_dano: a.danos, confirmado: !!a.confirmado, tipos: a.tipos })),
-      ataques_a_jugadores: hist.slice(-60), pvp: { ...PVP }, pvp_auto: { ...PA }, alerta_ataque: { on: AL.on, minimo: AL.min, mostradas: AL.mostradas, pico_en_3s: Math.round(AL.pico) },
+      ataques_a_jugadores: hist.slice(-60),
+      ataques_en_curso: [...atq.values()].map((r) => ({ id: r.id, hechizos: r.casts, seg: Math.round((Date.now() - r.primera) / 1000), hace_s: Math.round((Date.now() - r.ultima) / 1000), nombre: nombreTop(r), placa_cruda: r.placa || null, visto_mover: r.visto_mover, murio: r.murio, mi_vida_min_pct: r.vidaMin })),
+      pvp_resumen: { ataques: hist.length, con_nombre: hist.filter((x) => x.nombre).length, muertes: hist.filter((x) => x.murio).length, hechizos: hist.reduce((a, x) => a + (x.hechizos || 0), 0), nombres: [...new Set(hist.filter((x) => x.nombre).map((x) => x.nombre))].slice(-15) }, pvp: { ...PVP }, pvp_auto: { ...PA }, alerta_ataque: { on: AL.on, minimo: AL.min, mostradas: AL.mostradas, pico_en_3s: Math.round(AL.pico) },
       agresores: [...ataques.values()].filter((a) => a.confirmado).map((a) => ({ id: a.id, ataques: a.total, con_dano: a.danos, tipos: a.tipos, primera_s: Math.round((a.primera - t0) / 1000), ultima_s: Math.round((a.ultima - t0) / 1000) })), peleas: peleas.map((p) => ({ ...p, desde: Math.round((p.desde - t0) / 1000) })), bitacora: bit.slice(-120) }),
   };
 })();
