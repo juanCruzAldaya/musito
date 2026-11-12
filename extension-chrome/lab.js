@@ -36,6 +36,7 @@
     sost: !!(window.__modo && window.__modo.deseado() === 'sostener'),
     sum: !!(G() && G().summonChat && G().summonChat.stats().activo),
     buf: !!(G() && G().buff && G().buff.on()),
+    bfv: !!(G() && G().buffVida && G().buffVida.on()),
   });
   setInterval(() => {
     if (!caja) return;
@@ -50,7 +51,7 @@
       }
       const v = document.getElementById('vigia-panel'); if (v) v.style.bottom = (60 + SUBE) + 'px';
       const e = estados();
-      for (const [k, on] of [['sost', e.sost], ['sum', e.sum], ['buf', e.buf]]) { const b = caja.querySelector('[data-a="t_' + k + '"]'); if (b) b.classList.toggle('on', on); }
+      for (const [k, on] of [['sost', e.sost], ['sum', e.sum], ['buf', e.buf], ['bfv', e.bfv]]) { const b = caja.querySelector('[data-a="t_' + k + '"]'); if (b) b.classList.toggle('on', on); }
     } catch (e) { /* nada */ }
   }, 500);
   function pintar() {
@@ -70,7 +71,7 @@
       <div style="height:3px;background:#1c2f55;border-radius:2px;margin:2px 0 3px"><div id="lab-barra" style="height:3px;width:0;background:#6fe0ff;border-radius:2px"></div></div>
       <div id="lab-cuerpo">
       <div id="lab-out" style="display:none;margin:0 0 3px;padding:3px 5px;background:#000d;border:1px solid #6fe0ff55;border-radius:4px;font-size:11px;line-height:1.3;max-height:60px;overflow:auto"></div>
-      <div class="f"><button data-a="t_sost" title="Sostenida prendida / apagada (tecla F8)">Sostenida F8</button><button data-a="t_sum" title="Summon cuando alguien de tu party escribe summon / jala (demora de 2 a 6 s)">Summon</button><button data-a="t_buf" title="Mantiene puesto el buff de crítico">Buff crítico</button><button data-a="hab" title="Cambia la habilidad con la que pega la Sostenida: Fire Burst (508, la de siempre) → Chaotic Diseier (238, de área, gasta AG) → Fire Scream (78). No se guarda: al recargar vuelve a Fire Burst">Habilidad: …</button><button data-a="cbaj" title="Baja la caja negra y copia la ruta (tecla F9)">⬇ Caja F9</button></div>
+      <div class="f"><button data-a="t_sost" title="Sostenida prendida / apagada (tecla F8)">Sostenida F8</button><button data-a="t_sum" title="Summon cuando alguien de tu party escribe summon / jala (demora de 2 a 6 s)">Summon</button><button data-a="t_buf" title="Mantiene puesto el buff de crítico">Buff crítico</button><button data-a="t_bfv" title="Mantiene puesto Aumentar vida (Swell Life)">Buff vida</button><button data-a="hab" title="Cambia la habilidad con la que pega la Sostenida: Fire Burst (508, la de siempre) → Chaotic Diseier (238, de área, gasta AG) → Fire Scream (78). No se guarda: al recargar vuelve a Fire Burst">Habilidad: …</button><button data-a="cbaj" title="Baja la caja negra y copia la ruta (tecla F9)">⬇ Caja F9</button></div>
       <details><summary>Más</summary>
         <div class="f"><b>Mi spot</b> <button data-a="sp_g" title="Guarda el mapa y la casilla donde estás parado. Si morís vuelve solo">Guardar acá</button><button data-a="sp_r" title="Grabá el camino UNA vez: tocá esto donde reaparecés, caminá hasta el spot y tocá Parar camino">Grabar camino</button><button data-a="sp_p">Parar camino</button><button data-a="sp_v" title="Vuelve ahora al spot guardado">Volver ahora</button><button data-a="sp_on">Al morir: ON</button><button data-a="sp_off">OFF</button><button data-a="sp_x">Ver</button></div>
         <div class="f"><b>Party</b> <button data-a="grp" title="Invita a los de cerca (tecla F7). Los de tu clan entran siempre, sean PK o no">Invitar cercanos F7</button><button data-a="grv">Ver grupo</button><button data-a="aic" title="Si soy líder del grupo, hay lugar y se acerca alguien de tu CLAN que no está en el grupo, lo invita solo (de a uno). Si el grupo se desarma después de invitar, se apaga solo. Apagado de fábrica">Auto-invitar clan: …</button></div>
@@ -88,6 +89,7 @@
       if (a === 't_sost') return teclaF8();
       if (a === 'hab') { const Mo = window.__modo; if (!Mo || !Mo.setHabilidad) return anotar('modo.js no cargó (recargá la extensión)'); const ORD = [508, 238, 78], NOM = { 508: 'Fire Burst', 238: 'Chaotic Diseier', 78: 'Fire Scream' }; const sig = ORD[(ORD.indexOf(Mo.habilidad()) + 1) % ORD.length]; const ok = Mo.setHabilidad(sig); return toast('Habilidad de la Sostenida: ' + NOM[sig] + (ok ? '' : ' (OJO: el juego no la dejó elegir)') + '. No se guarda: al recargar vuelve a Fire Burst'); }
       if (a === 't_sum') { const g = G(); if (!g || !g.summonChat) return anotar('grupo.js no cargó (recargá la extensión)'); const on = !g.summonChat.stats().activo; g.summonChat.on(on); return toast('Summon por chat: ' + (on ? 'ON' : 'OFF')); }
+      if (a === 't_bfv') { const g = G(); if (!g || !g.buffVida) return anotar('grupo.js no cargó (recargá la extensión)'); const on = !g.buffVida.on(); g.buffVida.on(on); return toast('Buff de aumentar vida: ' + (on ? 'ON' : 'OFF')); }
       if (a === 't_buf') { const g = G(); if (!g || !g.buff) return anotar('grupo.js no cargó (recargá la extensión)'); const on = !g.buff.on(); g.buff.on(on); return toast('Buff de crítico: ' + (on ? 'ON' : 'OFF')); }
       if (a === 'cbaj') return bajarCajaConRuta('Bajar caja');
       if (a === 'cmar') { if (window.__caja) window.__caja.marcar('MARCA: el usuario dice que ahora está mal'); return anotar('Marca guardada a las ' + new Date().toLocaleTimeString('es-AR', { hour12: false })); }

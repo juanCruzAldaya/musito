@@ -169,7 +169,7 @@
   function encolar(motivo, porque) { INV.pend = { t: Date.now(), motivo }; INV.encolados++; INV.ult = 'pedido en cola (' + porque + '): lo lanzo apenas pueda'; LOGI(INV.ult + ' · ' + motivo); }
   async function invocar(motivo, deCola) {
     const m = M(), Mo = window.__modo, S = window.__pantalla, Pq = window.__paquetes;
-    if (BUF.ocupado) { const t0 = Date.now(); while (BUF.ocupado && Date.now() - t0 < 3000) await dormirI(100); }      // justo estaba lanzando el buff de crítico (dura ~0,5 s)
+    if (BUFS.some((b) => b.ocupado)) { const t0 = Date.now(); while (BUFS.some((b) => b.ocupado) && Date.now() - t0 < 3000) await dormirI(100); }      // justo estaba lanzando el buff de crítico (dura ~0,5 s)
     if (INV.ocupado) { if (!deCola && /^chat/.test(motivo)) encolar(motivo, 'estaba lanzando otra cosa'); return { ok: false, motivo: 'ya estoy lanzando' }; }
     if (!m || m._MuWebGetSceneFlag() !== 5 || !(m._MuWebGetPlayerLife() > 0)) { INV.ult = 'no estoy en el juego o estoy muerto'; return { ok: false, motivo: INV.ult }; }
     // v0.82.3 (caja 27): con el cuadro de chat o una ventana del juego abiertos (ej. escribiendo /move) el juego rechaza elegir la habilidad: no se intenta, el pedido queda en cola
@@ -223,10 +223,7 @@
   // (o la que elijas con el Lab), la lanza sobre vos mismo con clic derecho (como el Summon pero con esperas cortas: ~0,4 s) y vuelve a la Sostenida. Cuándo relanzar: el servidor avisa cada efecto que
   // empieza o termina con el paquete C1 0x07 (estado, id del jugador, id del efecto); la extensión aprende sola qué efecto es el del crítico (la primera vez que lo lanza) y relanza cuando ESE efecto termina en vos.
   // Si no logra reconocerlo, relanza cada 120 s (relanzar un buff activo solo lo renueva). También lo relanza al entrar al juego y después de morir (la muerte lo borra). NO probado en el juego.
-  const BUF = { on: true, id: 0, nombre: '', eff: null, pid: null, activo: null, ultCast: 0, reintentoT: 0, seguidos: 0, lanzados: 0, fallos: 0, ocupado: false, ult: '', log: [], vistos: {}, votos: {}, durS: null, iniT: 0, ventana: 0, vi: false, vidaPrev: null, mapaPrev: null, termino: 0, tickN: 0 };
-  try { const g = JSON.parse(localStorage.getItem('muBuffCriticoV1') || 'null'); if (g) { /* el buff de crítico arranca SIEMPRE prendido (pedido del usuario, v0.88.2): no se recupera el "apagado" guardado */ if (g.id > 0 && g.id < 2000) BUF.id = g.id | 0; if (g.eff >= 0 && g.eff < 256) BUF.eff = g.eff | 0; } } catch (e) { /* nada */ }
-  const guardarBUF = () => { try { localStorage.setItem('muBuffCriticoV1', JSON.stringify({ v: 1, on: BUF.on, id: BUF.id, eff: BUF.eff })); } catch (e) { /* nada */ } };
-  const LOGB = (t) => { BUF.log.push({ t: new Date().toISOString().slice(11, 19), txt: t }); if (BUF.log.length > 40) BUF.log.shift(); };
+  const BUFS = [];      // los buffs que mantiene (crítico, aumentar vida): comparten el 'estoy lanzando' para no pisarse
   const txtArg = (n, a) => { try { const f = M()['_MuWeb' + n]; const p = f(a) | 0; return p ? M().UTF8ToString(p) : ''; } catch (e) { return ''; } };
   function listaHab() {
     const m = M(), out = []; if (!m || !m._MuWebGetSkillListCount) return out;
@@ -234,7 +231,12 @@
     for (let i = 0; i < n && i < 60; i++) { const tipo = m._MuWebGetSkillListType(i) | 0; out.push({ i, tipo, nombre: txtArg('GetSkillNameUtf8', tipo) }); }
     return out;
   }
-  const buscarCritico = () => { const h = listaHab().find((x) => /critic/.test(norm(x.nombre))); if (h) { BUF.nombre = h.nombre; return h.tipo; } return 0; };
+  function crearBuff(CFG) {
+  const BUF = { on: true, id: 0, nombre: '', eff: null, pid: null, activo: null, ultCast: 0, reintentoT: 0, seguidos: 0, lanzados: 0, fallos: 0, ocupado: false, ult: '', log: [], vistos: {}, votos: {}, durS: null, iniT: 0, ventana: 0, vi: false, vidaPrev: null, mapaPrev: null, termino: 0, tickN: 0 };
+  try { const g = JSON.parse(localStorage.getItem(CFG.clave) || 'null'); if (g) { /* el buff de crítico arranca SIEMPRE prendido (pedido del usuario, v0.88.2): no se recupera el "apagado" guardado */ if (g.id > 0 && g.id < 2000) BUF.id = g.id | 0; if (g.eff >= 0 && g.eff < 256) BUF.eff = g.eff | 0; } } catch (e) { /* nada */ }
+  const guardarBUF = () => { try { localStorage.setItem(CFG.clave, JSON.stringify({ v: 1, on: BUF.on, id: BUF.id, eff: BUF.eff })); } catch (e) { /* nada */ } };
+  const LOGB = (t) => { BUF.log.push({ t: new Date().toISOString().slice(11, 19), txt: t }); if (BUF.log.length > 40) BUF.log.shift(); };
+  const buscarCritico = () => { const h = CFG.buscar(listaHab()); if (h) { BUF.nombre = h.nombre; return h.tipo; } return 0; };
   const miPid = () => { try { const A = window.__agresor, h = A && A.heroId ? A.heroId() : null; return h != null ? h : BUF.pid; } catch (e) { return BUF.pid; } };
   const cadaMs = () => (BUF.eff != null && miPid() != null ? 600000 : 120000);      // red de seguridad: con el efecto reconocido confía en el aviso del servidor; si no, renueva cada 2 min
   function onEfecto(u) {
@@ -245,21 +247,21 @@
     if (est && enVentana && (BUF.eff == null || eff === BUF.eff) && (yo == null || pid === yo)) {
       if (BUF.eff == null) {
         const kk = eff + ':' + pid; BUF.votos[kk] = (BUF.votos[kk] || 0) + 1;
-        if (yo != null || BUF.votos[kk] >= 2) { BUF.eff = eff; BUF.pid = pid; guardarBUF(); LOGB('aprendí el efecto del crítico: ' + eff + ' (mi id ' + pid + ')'); }
+        if (yo != null || BUF.votos[kk] >= 2) { BUF.eff = eff; BUF.pid = pid; guardarBUF(); LOGB('aprendí el efecto de ' + CFG.txt + ': ' + eff + ' (mi id ' + pid + ')'); }
       } else if (BUF.pid == null) BUF.pid = pid;
       BUF.vi = true;
     }
     if (BUF.eff == null || eff !== BUF.eff) return;
     const mio = miPid(); if (mio == null || pid !== mio) return;
     if (est) { BUF.activo = true; if (!BUF.iniT) BUF.iniT = ahora; }
-    else { BUF.activo = false; BUF.termino++; if (BUF.iniT) { BUF.durS = Math.round((ahora - BUF.iniT) / 1000); } BUF.iniT = 0; BUF.reintentoT = 0; LOGB('el buff de crítico terminó' + (BUF.durS ? ' (duró ' + BUF.durS + ' s)' : '') + ': lo relanzo'); }
+    else { BUF.activo = false; BUF.termino++; if (BUF.iniT) { BUF.durS = Math.round((ahora - BUF.iniT) / 1000); } BUF.iniT = 0; BUF.reintentoT = 0; LOGB('el buff de ' + CFG.txt + ' terminó' + (BUF.durS ? ' (duró ' + BUF.durS + ' s)' : '') + ': lo relanzo'); }
   }
   async function lanzarBuff(motivo) {
     const m = M(), Mo = window.__modo, S = window.__pantalla, Pq = window.__paquetes;
-    if (INV.ocupado || BUF.ocupado) return { ok: false, motivo: 'ya estoy lanzando algo' };
+    if (INV.ocupado || BUFS.some((b) => b.ocupado)) return { ok: false, motivo: 'ya estoy lanzando algo' };
     if (!m || m._MuWebGetSceneFlag() !== 5 || !(m._MuWebGetPlayerLife() > 0)) return { ok: false, motivo: 'no estoy en el juego o estoy muerto' };
     const id0 = BUF.id || buscarCritico();
-    if (!id0) { BUF.fallos++; BUF.ult = 'no encontré una habilidad de crítico en tu lista (elegila a mano en el Lab: "Elegir habilidad")'; LOGB(BUF.ult); return { ok: false, motivo: BUF.ult }; }
+    if (!id0) { BUF.fallos++; BUF.ult = 'no encontré la habilidad de ' + CFG.txt + ' en tu lista'; LOGB(BUF.ult); return { ok: false, motivo: BUF.ult }; }
     BUF.ocupado = true; INV.ocupado = true;
     const prev = Mo && Mo.deseado ? Mo.deseado() : null, farmeando = ['sostener', 'pulsos', 'auto'].includes(prev);
     const tx = () => (Pq ? (Pq.cuenta('tx', 'C3:0x19') | 0) + (Pq.cuenta('tx', 'C3:0x1e') | 0) : 0);
@@ -282,8 +284,8 @@
         if (!ok) { S.derecho.iniciar(c.x, c.y); await dormirI(350); try { S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ } await dormirI(450); if (salio()) { ok = true; via = 'clic derecho lento'; } }      // 2º: como el Summon
       }
       if (!ok) { const t0 = Date.now(); while (Date.now() - t0 < 600) { m._MuWebSetManualSkillHeld(0); m._MuWebSetManualSkillHeld(1); await dormirI(30); } m._MuWebSetManualSkillHeld(0); await dormirI(250); if (salio()) { ok = true; via = 'pulsos'; } }
-      if (ok) { BUF.lanzados++; BUF.activo = true; BUF.ultCast = Date.now(); BUF.seguidos = 0; BUF.ult = 'buff de crítico lanzado (' + via + ', ' + motivo + ')'; LOGB(BUF.ult); }
-      else { BUF.fallos++; BUF.seguidos++; BUF.ult = 'intenté el buff de crítico y no salió (mirá mana, Comando y la habilidad)'; LOGB(BUF.ult); }
+      if (ok) { BUF.lanzados++; BUF.activo = true; BUF.ultCast = Date.now(); BUF.seguidos = 0; BUF.ult = 'buff de ' + CFG.txt + ' lanzado (' + via + ', ' + motivo + ')'; LOGB(BUF.ult); }
+      else { BUF.fallos++; BUF.seguidos++; BUF.ult = 'intenté el buff de ' + CFG.txt + ' y no salió (mirá mana, AG y la habilidad)'; LOGB(BUF.ult); }
       return { ok, via };
     } finally {
       try { if (farmeando && Mo.viaje) Mo.viaje(false); } catch (e) { /* nada */ }      // vuelve a elegir Fire Burst y a pulsar
@@ -291,7 +293,7 @@
     }
   }
   async function tickBuf() {
-    if (!BUF.on || BUF.ocupado || INV.ocupado) return;
+    if (!BUF.on || BUFS.some((b) => b.ocupado) || INV.ocupado) return;
     const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5) return;
     const vida = m._MuWebGetPlayerLife() | 0, ahora = Date.now();
     if (vida <= 0) { if (BUF.activo !== false) LOGB('morí: el buff se pierde'); BUF.activo = false; BUF.vidaPrev = 0; BUF.iniT = 0; return; }
@@ -315,10 +317,17 @@
     lanzar: (m) => lanzarBuff(m || 'a pedido'),
     stats: () => ({ activo: BUF.on, habilidad_id: BUF.id || buscarCritico() || null, nombre: BUF.nombre, id_manual: BUF.id || null, efecto_id: BUF.eff, mi_id: miPid(), buff_puesto: BUF.activo, lanzados: BUF.lanzados, fallos: BUF.fallos, terminaciones_vistas: BUF.termino, duracion_s: BUF.durS, renueva_cada_s: Math.round(cadaMs() / 1000), efectos_vistos: { ...BUF.vistos }, ultimo: BUF.ult, registro: BUF.log.slice(-12) }),
   };
-  window.__grupoInvocarOnChat = (u) => { onChat(u); onEfecto(u); };       // siempre apunta a la instancia más nueva (recarga en caliente)
+    BUFS.push(BUF);
+    return { BUF, onEfecto, API: BUFAPI };
+  }
+  const B1 = crearBuff({ clave: 'muBuffCriticoV1', txt: 'crítico', buscar: (l) => l.find((x) => /critic/.test(norm(x.nombre))) });
+  // Aumentar vida (Swell Life, habilidad 48; en el juego en español "Aumentar vida"): buff de grupo que gasta 22 de maná y 24 de AG. Pedido del usuario: tenerlo puesto todo el tiempo como el de crítico (v0.90.0).
+  const B2 = crearBuff({ clave: 'muBuffVidaV1', txt: 'aumentar vida', buscar: (l) => l.find((x) => x.tipo === 48) || l.find((x) => /swell|fortitude|aumentar vida/.test(norm(x.nombre))) });
+  const BUFAPI = B1.API, BUFAPI2 = B2.API;
+  window.__grupoInvocarOnChat = (u) => { onChat(u); B1.onEfecto(u); B2.onEfecto(u); };       // siempre apunta a la instancia más nueva (recarga en caliente)
   window.__grupo = {
     invocar: (m) => invocar(m || 'a pedido'), summonChat: { on: (v) => { if (v != null) { INV.on = !!v; guardarINV(); } return INV.on; }, modo: (m) => { if (['party', 'grupo', 'miembros', 'cualquiera'].includes(m)) { INV.modo = m; guardarINV(); } return INV.modo; }, demora: (a, b) => { if (a >= 0 && b >= a && b <= 30000) { INV.demMin = a | 0; INV.demMax = b | 0; } return [INV.demMin, INV.demMax]; }, espera: (ms) => { if (ms >= 0 && ms <= 20000) { INV.esperaMs = ms | 0; guardarINV(); } return INV.esperaMs; }, stats: () => ({ activo: INV.on, modo: INV.modo, espera_ms: INV.esperaMs, demora_al_azar_ms: [INV.demMin, INV.demMax], ultima_demora_ms: INV.ultDem, canales: { ...INV.canales }, prefijos_vistos: { ...INV.prefijos }, chats_leidos: INV.leidos, con_palabra_clave: INV.coinciden, summon_lanzados: INV.lanzados, fallos: INV.fallos, ignorados: INV.ignorados, ultimo: INV.ult, enfriamiento_s: Math.ceil(cd63() / 1000), registro: INV.log.slice(-30), en_cola: INV.pend ? INV.pend.motivo : null, encolados: INV.encolados, clic_derecho_fallos_seguidos: INV.derechoMal }) },
-    buff: BUFAPI, autoClan: AUTOAPI, cercanos, candidatos, invitar, grupoActual, eventos: () => eventos.slice(), resumen: () => ultimo,
+    buff: BUFAPI, buffVida: BUFAPI2, autoClan: AUTOAPI, cercanos, candidatos, invitar, grupoActual, eventos: () => eventos.slice(), resumen: () => ultimo,
     crudo: () => ({ grupo: JSON.stringify(grupoActual()).slice(0, 700), clan: JSON.stringify(texto('GetGuildMembersUtf8')).slice(0, 1500), cercanos: JSON.stringify(texto('GetCommandablePlayersUtf8')).slice(0, 700) }),      // para averiguar si el texto del clan trae el estado conectado/desconectado de cada integrante
     ver: () => 'Auto-invitar clan: ' + (AUTO.on ? 'ENCENDIDO' : 'apagado') + (AUTO.ultTxt ? ' (' + AUTO.ultTxt + ')' : '') + ' · Grupo (crudo): ' + (grupoActual() || '(vacío)').replace(/\s+/g, ' ').slice(0, 200) + ' · eventos: ' + (eventos.slice(-6).map((e) => new Date(e.t).toLocaleTimeString('es-AR', { hour12: false }) + ' ' + e.nombre + ' ' + e.tipo + (e.tipo === 'salió' ? (e.cerca ? ' (estaba cerca)' : ' (no estaba cerca)') : '')).join(' | ') || 'ninguno todavía'),
   };
