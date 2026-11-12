@@ -303,22 +303,25 @@
         let objNm = '';
         if (raton) {      // ¿quién es? la placa se mira SIN modo PK: si es de tu party/clan (o no se lee) no se le pega
           let nm = ''; for (let k = 0; k < 14 && !nm; k++) { nm = (str('GetTargetPlateUtf8').split('\t')[0] || '').trim(); if (!nm) await dormir(30); }
-          if (!nm || enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) {
+          const yoNm = (str('GetHeroNameUtf8') || '').trim().toLowerCase();
+          if (!nm || (yoNm && nm.toLowerCase() === yoNm) || enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) {
             try { const c = S.centro(); S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ }
-            if (nm) { nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); frio.set(id, Date.now() + 3600000); PVP.descartados++; log(etq + ': #' + id + ' (' + nm + ') es de tu party/clan: no lo toco'); }
+            if (nm && yoNm && nm.toLowerCase() === yoNm) { frio.set(id, Date.now() + 3600000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': #' + id + ' soy yo mismo (placa ' + nm + '): lo ignoro'); }
+            else if (nm) { nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); frio.set(id, Date.now() + 3600000); PVP.descartados++; log(etq + ': #' + id + ' (' + nm + ') es de tu party/clan: no lo toco'); }
             else { frio.set(id, Date.now() + 4000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': no pude leer la placa de #' + id + ' (el clic derecho sin modo PK quizá no lo selecciona)'); }
             await dormir(250); continue;
           }
           objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + ' (#' + id + ')');
         }
         const timer = setInterval(() => { try { pulsoPvp(); } catch (e) { /* nada */ } }, 10);
-        let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now();
+        let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now(), idReal = null;      // idReal (v0.89.1): a quién van de verdad los hechizos; un jugador parado no manda movimientos y el id elegido puede ser otro (caja 41: elegí #512 = yo, los hechizos iban al #914)
         try {
           while (PVP.on && vivo) {
             const ahora = Date.now(), j = pos.get(id);
             if (!(call('GetPlayerLife') > 0)) { motivo = 'morí'; break; }
             if (vidaPct() < VIDA_CORTE * 100) { motivo = 'vida baja'; break; }
-            const m = muertos.get(id); if (m && m >= t0) { motivo = 'LO MATÉ (aviso de muerte)'; PVP.muertes++; break; }
+            if (raton) { const rec = misCasts.filter((c) => ahora - c.t < 1500 && !monstruos.has(c.tid) && c.tid !== heroId); if (rec.length >= 3) { const cnt = {}; rec.forEach((c) => { cnt[c.tid] = (cnt[c.tid] || 0) + 1; }); const best = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] | 0; if (best && best !== idReal && best !== id) { idReal = best; pelea.id = best; log(etq + ': los hechizos van al #' + best + ' (yo había elegido el #' + id + ')'); } } }
+            const m = muertos.get(id), mr = idReal != null ? muertos.get(idReal) : null; if ((m && m >= t0) || (mr && mr >= t0)) { motivo = 'LO MATÉ (aviso de muerte' + (mr && mr >= t0 ? ' de #' + idReal : '') + ')'; PVP.muertes++; break; }
             if (!j || ahora - j.t > (uno || raton ? 40000 : 5000)) { motivo = 'se fue'; frio.set(id, ahora + 30000); break; }
             if (cheb({ x: j.tx, y: j.ty }, { x: call('GetHeroX'), y: call('GetHeroY') }) > 11) { motivo = 'se alejó'; frio.set(id, ahora + 30000); break; }
             const px = S.pixelAtaque({ x: j.tx, y: j.ty }); if (!px || !S.enPantalla(px)) { motivo = 'salió de la pantalla'; frio.set(id, ahora + 20000); break; }
@@ -329,8 +332,8 @@
               if (raton) {      // misma placa que al enganchar; party/clan corta con el PK apagado; y el mouse manda: si lo sacás o lo ponés sobre otro, cambia
                 if (nombre && nombre.trim() !== objNm) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
                 if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { call('SetPkMode', 0); motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): paro'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
-                const d0 = distCur(id); if (d0 > SOLTAR_CUR) { motivo = 'sacaste el mouse'; break; }
-                if (d0 > RADIO_CUR * 0.7) { const otro = candidatosPvp(40000).find((x) => x !== id && distCur(x) <= RADIO_CUR * 0.7 && distCur(x) < d0 - 25); if (otro != null) { motivo = 'el mouse pasó a otro jugador'; break; } }
+                const idM = idReal != null ? idReal : id, d0 = pos.has(idM) ? distCur(idM) : 0; if (d0 > SOLTAR_CUR) { motivo = 'sacaste el mouse'; break; }      // sin posición conocida del blanco real no se puede medir: manda la placa
+                if (d0 > RADIO_CUR * 0.7) { const otro = candidatosPvp(40000).find((x) => x !== idM && distCur(x) <= RADIO_CUR * 0.7 && distCur(x) < d0 - 25); if (otro != null) { motivo = 'el mouse pasó a otro jugador'; break; } }
               }
               if (uno && nombre && nombre.trim().toLowerCase() !== uno) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
               if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): lo descarto'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
@@ -348,7 +351,7 @@
         }
         PVP.ult = 'jugador #' + id + ': ' + motivo + ' · ' + Math.round((Date.now() - t0) / 1000) + ' s · ' + casts + ' hechizos'; log(etq + ': ' + PVP.ult);
         pelea.vidaMin = Math.min(pelea.vidaMin, vidaPct());
-        if (raton) { call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) frio.set(id, Date.now() + 4000); }
+        if (raton) { call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) { frio.set(id, Date.now() + 4000); if (idReal != null) frio.set(idReal, Date.now() + 4000); } }
         if (uno) { frio.delete(id); call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) { fin('lo maté: termino'); break; } }
         if (/morí|vida baja/.test(motivo)) break;
         await dormir(300);
