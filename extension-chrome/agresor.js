@@ -289,7 +289,10 @@
         } else id = uno || raton ? cand[0] : cand[Math.floor(Math.random() * cand.length)];
         PVP.objetivos++; pelea.id = id; const t0 = Date.now(); let casts = 0, sinCasts = 0, motivo = 'tiempo', ultCheck = 0;
         const j0 = pos.get(id); const px0 = S.pixelAtaque({ x: j0.tx, y: j0.ty });
-        S.derecho.iniciar(px0.x, px0.y); await dormir(250);
+        const sigueCur = () => raton && CUR.x != null;      // v0.89.2: en el modo mouse el clic va donde está el PUNTERO (no a la casilla calculada: un jugador que camina o está en una multitud no está donde dicen sus paquetes)
+        const curIni = sigueCur() && distCur(id) <= RADIO_CUR ? { x: CUR.x, y: CUR.y } : null;
+        if (curIni) S.derecho.iniciar(curIni.x, curIni.y); else S.derecho.iniciar(px0.x, px0.y);
+        await dormir(250);
         if (uno) {      // ¿es él? la placa se mira SIN modo PK (si es otro, no le pego); recién si coincide se prende el PK y salen los pulsos
           let nm = ''; for (let k = 0; k < 14 && !nm; k++) { nm = (str('GetTargetPlateUtf8').split('\t')[0] || '').trim().toLowerCase(); if (!nm) await dormir(30); }
           if (nm !== uno) {
@@ -314,7 +317,7 @@
           objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + ' (#' + id + ')');
         }
         const timer = setInterval(() => { try { pulsoPvp(); } catch (e) { /* nada */ } }, 10);
-        let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now(), idReal = null;      // idReal (v0.89.1): a quién van de verdad los hechizos; un jugador parado no manda movimientos y el id elegido puede ser otro (caja 41: elegí #512 = yo, los hechizos iban al #914)
+        let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now(), idReal = null, vacioDesde = 0;      // idReal (v0.89.1): a quién van de verdad los hechizos; un jugador parado no manda movimientos y el id elegido puede ser otro (caja 41: elegí #512 = yo, los hechizos iban al #914)
         try {
           while (PVP.on && vivo) {
             const ahora = Date.now(), j = pos.get(id);
@@ -322,18 +325,24 @@
             if (vidaPct() < VIDA_CORTE * 100) { motivo = 'vida baja'; break; }
             if (raton) { const rec = misCasts.filter((c) => ahora - c.t < 1500 && !monstruos.has(c.tid) && c.tid !== heroId); if (rec.length >= 3) { const cnt = {}; rec.forEach((c) => { cnt[c.tid] = (cnt[c.tid] || 0) + 1; }); const best = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] | 0; if (best && best !== idReal && best !== id) { idReal = best; pelea.id = best; log(etq + ': los hechizos van al #' + best + ' (yo había elegido el #' + id + ')'); } } }
             const m = muertos.get(id), mr = idReal != null ? muertos.get(idReal) : null; if ((m && m >= t0) || (mr && mr >= t0)) { motivo = 'LO MATÉ (aviso de muerte' + (mr && mr >= t0 ? ' de #' + idReal : '') + ')'; PVP.muertes++; break; }
-            if (!j || ahora - j.t > (uno || raton ? 40000 : 5000)) { motivo = 'se fue'; frio.set(id, ahora + 30000); break; }
-            if (cheb({ x: j.tx, y: j.ty }, { x: call('GetHeroX'), y: call('GetHeroY') }) > 11) { motivo = 'se alejó'; frio.set(id, ahora + 30000); break; }
-            const px = S.pixelAtaque({ x: j.tx, y: j.ty }); if (!px || !S.enPantalla(px)) { motivo = 'salió de la pantalla'; frio.set(id, ahora + 20000); break; }
-            S.derecho.mover(px.x, px.y);
-            if (ahora - ultCheck > (uno || raton ? 150 : 1000)) {            // la placa del blanco: si es de tu party o clan, se corta y no se lo vuelve a elegir
+            let px = null;
+            if (!raton) {
+              if (!j || ahora - j.t > (uno ? 40000 : 5000)) { motivo = 'se fue'; frio.set(id, ahora + 30000); break; }
+              if (cheb({ x: j.tx, y: j.ty }, { x: call('GetHeroX'), y: call('GetHeroY') }) > 11) { motivo = 'se alejó'; frio.set(id, ahora + 30000); break; }
+              px = S.pixelAtaque({ x: j.tx, y: j.ty }); if (!px || !S.enPantalla(px)) { motivo = 'salió de la pantalla'; frio.set(id, ahora + 20000); break; }
+              S.derecho.mover(px.x, px.y);
+            } else if (sigueCur()) S.derecho.mover(CUR.x, CUR.y);      // modo mouse: el clic derecho mantenido sigue al puntero; quien manda quién es el blanco es la placa del juego
+            else if (j) { px = S.pixelAtaque({ x: j.tx, y: j.ty }); if (px) S.derecho.mover(px.x, px.y); }
+            if (ahora - ultCheck > (uno ? 150 : raton ? 60 : 1000)) {            // la placa del blanco: si es de tu party o clan, se corta y no se lo vuelve a elegir
               ultCheck = ahora; const placa = str('GetTargetPlateUtf8').replace(/\t/g, ' | '), nombre = placa.split(' | ')[0];
               if (placa && !pelea.placas.includes(placa) && pelea.placas.length < 8) pelea.placas.push(placa);
               if (raton) {      // misma placa que al enganchar; party/clan corta con el PK apagado; y el mouse manda: si lo sacás o lo ponés sobre otro, cambia
                 if (nombre && nombre.trim() !== objNm) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
                 if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { call('SetPkMode', 0); motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): paro'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
-                const idM = idReal != null ? idReal : id, d0 = pos.has(idM) ? distCur(idM) : 0; if (d0 > SOLTAR_CUR) { motivo = 'sacaste el mouse'; break; }      // sin posición conocida del blanco real no se puede medir: manda la placa
-                if (d0 > RADIO_CUR * 0.7) { const otro = candidatosPvp(40000).find((x) => x !== idM && distCur(x) <= RADIO_CUR * 0.7 && distCur(x) < d0 - 25); if (otro != null) { motivo = 'el mouse pasó a otro jugador'; break; } }
+                if (!nombre) { if (!vacioDesde) vacioDesde = ahora; else if (ahora - vacioDesde > 900) { motivo = 'perdí el blanco (la placa quedó vacía)'; break; } } else vacioDesde = 0;
+                if (curIni && CUR.x != null && Math.hypot(CUR.x - curIni.x, CUR.y - curIni.y) > SOLTAR_CUR && !candidatosPvp(40000).some((x) => distCur(x) <= RADIO_CUR)) { motivo = 'sacaste el mouse'; break; }      // soltar solo si el puntero se fue lejos del enganche Y ya no hay ningún jugador conocido cerca de él
+                { const idM = idReal != null ? idReal : id, dM = pos.has(idM) ? distCur(idM) : null, movio = curIni && CUR.x != null ? Math.hypot(CUR.x - curIni.x, CUR.y - curIni.y) : 0;      // cambio de blanco: el puntero pasó claramente a otro jugador conocido
+                  if (dM != null ? dM > RADIO_CUR * 0.7 : movio > 60) { const otro = candidatosPvp(40000).find((x) => x !== idM && x !== id && distCur(x) <= RADIO_CUR * 0.7); if (otro != null) { motivo = 'el mouse pasó a otro jugador'; break; } } }
               }
               if (uno && nombre && nombre.trim().toLowerCase() !== uno) { call('SetPkMode', 0); motivo = 'el blanco cambió a otro (' + nombre + '): paro'; break; }
               if (nombre && (enParty(nombre) || enTexto(str('GetGuildMembersUtf8'), nombre))) { motivo = 'ES DE TU PARTY/CLAN (' + nombre + '): lo descarto'; PVP.descartados++; frio.set(id, ahora + 3600000); break; }
