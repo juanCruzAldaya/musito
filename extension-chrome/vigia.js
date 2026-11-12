@@ -4,7 +4,7 @@
 // si el usuario lo prende en el popup, vuelve a prender el Helper nativo cuando se apaga solo.
 (() => {
   'use strict';
-  const VERSION = '0.91.0';
+  const VERSION = '0.92.0';
   const cfg = { vigia: false, avisos: true };
 
   // ---- utilidades -------------------------------------------------------------------------

@@ -131,9 +131,11 @@
   // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
   const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
   // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
-  const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }, { g: 11, i: 51, lv: null }];
+  const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }];      // las botas (11:51) YA las tiene: se excluyeron a pedido (v0.92.0)
+  const EXCLUIDOS = [{ g: 11, i: 51 }];
   LOOT.firmas = LOOT.firmas.concat(PAEWANG); LOOT.nombres = [];
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
+  const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
   const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 2, on: LOOT.on, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
@@ -186,7 +188,46 @@
       if (it) juntar(it).catch(() => { LOOT.ocupado = false; });
     } catch (e) { /* no frenar */ }
   }, 100);
+  // ---- LISTA DE NOMBRES DEL HELPER NATIVO (v0.92.0) ----
+  // Caja 44: la Bota Real +6 cayó, el viaje llegó a la casilla y NO la levantó (pasar por encima solo levanta joyas). El Helper del juego tiene su propia lista "levantar items por nombre" (la de la ventana del Helper):
+  // MuWebHelperSetPickupNamesUtf8(texto, activar) reemplaza la lista (un nombre por línea, hasta 2048 bytes) y la aplica con ApplyConfig; MuWebHelperGetPickupNamesUtf8 / ...Enabled la leen.
+  // Se usa solo lo que exporta el juego, sin paquetes propios. Se MEZCLA con lo que el usuario ya tenga en esa lista (nunca la borra). Los nombres salen del propio juego (MuWebGetItemNameUtf8 del grupo:índice).
+  const HELP = { auto: true, ult: '', intentos: 0, listo: false, ultLectura: null };
+  try { const s = JSON.parse(localStorage.getItem('muHelperNombresV1') || 'null'); if (s && typeof s.auto === 'boolean') HELP.auto = s.auto; } catch (e) { /* nada */ }
+  const guardarHelp = () => { try { localStorage.setItem('muHelperNombresV1', JSON.stringify({ auto: HELP.auto })); } catch (e) { /* nada */ } };
+  const strH = (n) => { try { const m = M(), f = m['_MuWeb' + n]; if (typeof f !== 'function') return null; const p = f() | 0; return p ? m.UTF8ToString(p) : ''; } catch (e) { return null; } };
+  function helperLeer() {
+    const m = M(); if (!m || !m._MuWebHelperGetPickupNamesUtf8) return { ok: false, motivo: 'el juego no exporta la lista de nombres del Helper' };
+    const txt = strH('HelperGetPickupNamesUtf8'); const en = m._MuWebHelperGetPickupNamesEnabled ? m._MuWebHelperGetPickupNamesEnabled() : null; const mask = m._MuWebHelperGetPickupMask ? m._MuWebHelperGetPickupMask() : null;
+    const r = { ok: true, nombres: (txt || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean), activo: en, mascara: mask }; HELP.ultLectura = r; return r;
+  }
+  // agrega los nombres que falten (y activa la lista); no quita ninguno. Devuelve lo que quedó leído del juego.
+  function helperAgregar(nombres, activar = true) {
+    const m = M(); if (!m || !m._MuWebHelperSetPickupNamesUtf8 || typeof window.muAllocateUtf8 !== 'function') return { ok: false, motivo: 'falta MuWebHelperSetPickupNamesUtf8 o muAllocateUtf8' };
+    const ant = helperLeer(); if (!ant.ok) return ant;
+    const norm1 = (t) => normN(t); const tengo = new Set(ant.nombres.map(norm1)); const nuevos = [];
+    for (const n of nombres) { const t = String(n || '').trim(); if (t && !tengo.has(norm1(t))) { tengo.add(norm1(t)); nuevos.push(t); } }
+    if (!nuevos.length && ant.activo) return { ok: true, sinCambios: true, ...ant };
+    const lista = ant.nombres.concat(nuevos); let texto = lista.join('\n');
+    while (new TextEncoder().encode(texto).length > 2000 && lista.length > 1) { lista.pop(); nuevos.pop(); texto = lista.join('\n'); }      // tope del juego: 2048 bytes
+    let ptr = 0, r = null; HELP.intentos++;
+    try { ptr = window.muAllocateUtf8(texto); r = m._MuWebHelperSetPickupNamesUtf8(ptr, activar ? 1 : 0); } catch (e) { return { ok: false, motivo: 'error: ' + String(e && e.message || e).slice(0, 80) }; } finally { try { if (ptr) m._free(ptr); } catch (e) { /* nada */ } }
+    const des = helperLeer(); HELP.ult = 'agregué ' + nuevos.length + ' nombre(s) [' + nuevos.join(', ') + '] · el juego devolvió ' + r + ' · ahora la lista tiene ' + (des.nombres || []).length + ' y está ' + (des.activo ? 'ACTIVADA' : 'apagada'); L('helper: ' + HELP.ult);
+    return { ok: r !== -1, devolvio: r, agregados: nuevos, ...des };
+  }
+  const nombresPaewang = () => PAEWANG.map((p) => nombreItem(p.g, p.i)).filter(Boolean);
+  // una sola vez por carga, con el personaje en el juego y vivo (ApplyConfig recarga la configuración del Helper): pone los nombres del set Real
+  let helperTick = 0;
+  setInterval(() => {
+    try {
+      if (HELP.listo || !HELP.auto) return; const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5 || !(m._MuWebGetPlayerLife() > 0)) { helperTick = 0; return; }
+      if (++helperTick < 8) return;      // ~8 s dentro del juego
+      const nm = nombresPaewang(); if (nm.length < PAEWANG.length) { if (helperTick > 40) HELP.listo = true; return; }      // los nombres todavía no se pueden leer
+      HELP.listo = true; helperAgregar(nm, true);
+    } catch (e) { HELP.listo = true; HELP.ult = 'error: ' + String(e && e.message || e).slice(0, 80); }
+  }, 1000);
   window.__loot = {
+    helperLeer, helperAgregar, helperAuto: (v) => { if (v != null) { HELP.auto = !!v; guardarHelp(); } return HELP.auto; }, helperEstado: () => ({ auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }),
     on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; },
     firmas: () => LOOT.firmas.slice(), firmaTxt,
     marcarMasCercano: () => {      // agrega la firma del item del piso más cercano al héroe (para enseñarle cuál es la caja)
@@ -202,10 +243,10 @@
     // busca en TODOS los items del juego los que tengan ese texto en el nombre (idioma del cliente): { ok, encontrados: ['10:51 Guantes ...'] }
     buscarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; const m = M(); if (!m || !m._MuWebGetItemNameUtf8) return { ok: false, motivo: 'el juego no tiene la consulta de nombres' }; const out = []; for (let g = 0; g <= 15; g++) for (let i = 0; i <= 511; i++) { const n = nombreItem(g, i); if (n && normN(n).includes(q)) out.push({ g, i, nombre: n }); if (out.length > 200) break; } return { ok: true, encontrados: out }; },
     // agrega el texto como filtro: todo item del piso cuyo nombre lo contenga se va a buscar (cualquier nivel)
-    agregarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; if (!LOOT.nombres.includes(q)) LOOT.nombres.push(q); guardarLoot(); return { ok: true, nombres: LOOT.nombres.slice() }; },
+    agregarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; if (!LOOT.nombres.includes(q)) LOOT.nombres.push(q); guardarLoot(); let h = null; try { const r = window.__loot.buscarNombre(texto); if (r.ok && r.encontrados.length && r.encontrados.length <= 40) h = helperAgregar([...new Set(r.encontrados.map((x) => x.nombre))], true); } catch (e) { /* nada */ } return { ok: true, nombres: LOOT.nombres.slice(), helper: h }; },
     quitarNombres: () => { LOOT.nombres = []; guardarLoot(); return true; },
     cerca: () => { const B = window.__bichos, h = heroJ(); return B && B.suelo ? B.suelo().filter((x) => chebJ(x, h) <= 15).sort((p, q) => chebJ(p, h) - chebJ(q, h)).slice(0, 12).map((x) => (x.g === undefined ? '?' : x.g + ':' + x.i + ' niv ' + x.lv) + ' a ' + chebJ(x, h)) : []; },
-    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), radio: LOOT.radio, objetivos: LOOT.objetivos, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
+    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), helper_nombres: (() => { try { return { auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }; } catch (e) { return null; } })(), radio: LOOT.radio, objetivos: LOOT.objetivos, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
       firmas_vistas: [...LOOT.vistos].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => k + ' x' + n) }),
   };
   window.__joyas = {
