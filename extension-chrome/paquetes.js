@@ -118,6 +118,16 @@
     recientesRaros.push({ t_s: Math.round((Date.now() - t0) / 1000), paquete: m.k, largo: u8.length, hex: hex2(u8.slice(0, 320)) });
     if (recientesRaros.length > 80) recientesRaros.shift();
   }
+  // Lo que ENVÍA el cliente cuando hacés algo puntual (aplicar una joya, mover un item, usar algo): los últimos 40 paquetes enviados que NO son movimiento ni hechizos, con sus bytes y quién los mandó
+  // (la pila de llamadas de JS, por si el nombre de la función aparece). Solo lectura: el paquete lo arma y lo manda el propio juego.
+  const FREC_TX = new Set(['C1:0xd4', 'C3:0x19', 'C1:0x00']);
+  const enviadosRecientes = [];
+  function guardarEnviado(m, u8) {
+    if (!u8 || FREC_TX.has(m.k)) return;
+    let pila = ''; try { pila = String(new Error().stack || '').split('\n').slice(2, 9).map((x) => x.trim().slice(0, 160)).join(' | '); } catch (e) { /* nada */ }
+    enviadosRecientes.push({ t_s: Math.round((Date.now() - t0) / 1000), paquete: m.k, largo: u8.length, hex: hex2(u8.slice(0, 200)), pila });
+    if (enviadosRecientes.length > 40) enviadosRecientes.shift();
+  }
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
@@ -159,7 +169,7 @@
         } catch (err) { /* nada */ }
       });
       const send = s.send.bind(s);
-      s.send = (d) => { try { const u = aU8(d); anotar(tx, meta(u), 'tx'); logTx(u); for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
+      s.send = (d) => { try { const u = aU8(d); anotar(tx, meta(u), 'tx'); logTx(u); try { guardarEnviado(meta(u), u); } catch (e3) { /* nada */ } for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
       return s;
     };
     P.prototype = WS.prototype;
@@ -174,6 +184,7 @@
     rareza: () => rareza, recientes: () => recientesRaros,
     equipo: () => equipoTexto(),
     inventario: () => ({ ...inv, catalogo_cargado: !!catalogo, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice), afijos_txt: (x.afijos || []).map(afijoTexto) })), cambios: cambios.map((c) => ({ ...c, nombre: nombreDeItem(c.grupo, c.indice), afijos_txt: c.afijos.map(afijoTexto) })) }),
-    informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
+    enviadosRecientes: () => enviadosRecientes,
+    informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, enviados_recientes: enviadosRecientes, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();
