@@ -509,8 +509,12 @@
       if (!PR.enEpisodio) { PR.enEpisodio = true; PR.episodios++; }
       if (ahora - ultPocion < PR.ms) return;
       const sdLim = pvp ? Math.max(PR.sdMax, 0.95) : PR.sdMax;
-      let tipo = null;
-      if (mxSd > 0 && sd < sdLim) tipo = 'sd'; else if (hp < PR.hpMax) tipo = 'hp';
+      // v0.95.0 (caja 49): la poción de SD tenía SIEMPRE prioridad y el juego la deja usar muy de vez en cuando (gap mediano 3,5 s): 70 intentos seguidos sin gastar y la de VIDA (Q) nunca se probó aunque la vida
+      // estaba en 15-40 %. Ahora, si hacen falta las dos, se ALTERNAN (cada una tiene su propio enfriamiento) y con la vida < 50 % la de vida va 2 de cada 3 veces; si hace falta solo una, esa.
+      const faltaSd = mxSd > 0 && sd < sdLim, faltaHp = hp < PR.hpMax;
+      let tipo = null; PR.alt = (PR.alt || 0) + 1;
+      if (faltaSd && faltaHp) tipo = hp < 0.5 ? (PR.alt % 3 === 0 ? 'sd' : 'hp') : (PR.alt % 2 ? 'sd' : 'hp');
+      else if (faltaHp) tipo = 'hp'; else if (faltaSd) tipo = 'sd';
       if (!tipo) return;
       const p = POCIONES[tipo], n = call('GetHotkeyItemCount', p.slot) | 0;
       if (n <= 0) { PR.sinPocion++; if (!avisoPoc[tipo] || ahora - avisoPoc[tipo] > 60000) { avisoPoc[tipo] = ahora; enviar('piloto_pociones', 'Sin pociones de ' + p.nombre + ' en la tecla rápida (' + p.key.key.toUpperCase() + ').', true); } return; }
