@@ -48,12 +48,47 @@
       return;
     }
   }
+  // ---- LECTOR DE MIS ITEMS (v0.97.0): lista de inventario que manda el servidor al entrar (C4 F3 10) ----
+  // Solo lectura. Formato visto en la caja 57 (888 B): C4 len len F3 10 cantidad, y después por cada item: casilla (1 B) + item de largo VARIABLE (10 a 19 B). Del item se entiende con seguridad:
+  // byte0 = grupo(4 bits altos) | algo, byte1 = índice, byte2 = nivel (+0..+15) -> 7:51 +15 = Paewang Mask +15. El resto (opciones, excelentes, afijos de rareza) todavía no está descifrado: se guarda en hexadecimal.
+  // Como el largo varía, el corte entre items es una HEURÍSTICA: la casilla siguiente es un número mayor, seguido de una cabecera plausible. Las casillas 0-11 son el equipo puesto (0 arma, 1 escudo, 2 casco, 3 armadura, 4 pantalón, 5 guantes, 6 botas, 7 alas, 8 mascota, 9-10 anillos...).
+  const inv = { visto: false, t_s: null, largo: 0, hex: '', items: [], confiable: null };
+  const hex2 = (a) => Array.from(a, (b) => b.toString(16).padStart(2, '0')).join(' ');
+  function parsearInventario(u8) {
+    const L = u8.length, out = []; let pos = 6;
+    const cab = (j) => j + 3 < L && u8[j + 1] <= 0xFE && (u8[j + 3] <= 15 || u8[j + 3] === 0xFF) && u8[j + 2] < 0x80;
+    while (pos < L - 4) {
+      const slot = u8[pos]; let fin = L;
+      for (let j = pos + 9; j < Math.min(L - 3, pos + 28); j++) { if (u8[j] > slot && u8[j] <= 0x4C && cab(j) && (u8[j + 1] >> 4) <= 15) { fin = j; break; } }
+      if (fin === L && L - pos > 28) break;      // no se pudo cortar: se corta acá (lo que sigue no es confiable)
+      const it = u8.slice(pos + 1, fin);
+      out.push({ casilla: slot, grupo: it[0] >> 4, indice: it[1], nivel: it[2], largo: it.length, extra: hex2(it.slice(3)) });
+      pos = fin;
+    }
+    return out;
+  }
+  function leerInventario(m, u8) {
+    if (!u8 || u8.length < 40 || m.k !== 'C4:0xf3' || u8[4] !== 0x10) return;
+    inv.visto = true; inv.t_s = Math.round((Date.now() - t0) / 1000); inv.largo = u8.length; inv.hex = hex2(u8.slice(0, 1024));
+    inv.items = parsearInventario(u8);
+    const eq = inv.items.filter((x) => x.casilla <= 11);
+    inv.confiable = eq.length >= 6 && eq.every((x, i, a) => i === 0 || x.casilla > a[i - 1].casilla);
+  }
+  const nombreDeItem = (g, i) => { try { const M = window.Module, p = M && M._MuWebGetItemNameUtf8 ? M._MuWebGetItemNameUtf8(g, i) | 0 : 0; return p ? M.UTF8ToString(p) : ''; } catch (e) { return ''; } };
+  const equipoTexto = () => (inv.visto ? inv.items.filter((x) => x.casilla <= 11).map((x) => x.casilla + ': ' + (nombreDeItem(x.grupo, x.indice) || (x.grupo + ':' + x.indice)) + ' +' + x.nivel).join(' · ') + (inv.confiable ? '' : ' (lectura dudosa)') : 'todavía no vi la lista de inventario (recargá la página con F5 y entrá al juego)');
+  // Los últimos 80 paquetes recibidos que NO son los del combate (con sus bytes completos hasta 320): para ver qué manda el servidor justo después de una acción puntual (por ejemplo cambiarle el "rare" a un item) y compararlo con lo de antes.
+  const recientesRaros = [];
+  function guardarReciente(m, u8) {
+    if (!u8 || u8.length < 8 || FRECUENTES.has(m.k) || m.k === 'C1:0xe7' || m.k === 'C2:0x12') return;
+    recientesRaros.push({ t_s: Math.round((Date.now() - t0) / 1000), paquete: m.k, largo: u8.length, hex: hex2(u8.slice(0, 320)) });
+    if (recientesRaros.length > 80) recientesRaros.shift();
+  }
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
     if (dir === 'rx' && u8) for (const f of escRx) { try { f(u8); } catch (e) { /* nada */ } }
     if (dir === 'rx' && u8) guardarMuestra(m, u8);
-    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } }
+    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } try { leerInventario(m, u8); } catch (e) { /* nada */ } try { guardarReciente(m, u8); } catch (e) { /* nada */ } }
     const c = tabla[m.k] || (tabla[m.k] = { n: 0, min: 1e9, max: 0, suma: 0 });
     c.n++; c.min = Math.min(c.min, m.len); c.max = Math.max(c.max, m.len); c.suma += m.len;
     total[dir]++;
@@ -101,7 +136,9 @@
   window.__paquetes = {
     alRecibir: (f) => escRx.push(f), alEnviar: (f) => escTx.push(f),
     cuenta: (dir, k) => ((dir === 'tx' ? tx : rx)[k] || { n: 0 }).n,
-    rareza: () => rareza,
-    informe: () => ({ rareza_sniff: rareza, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
+    rareza: () => rareza, recientes: () => recientesRaros,
+    equipo: () => equipoTexto(),
+    inventario: () => ({ ...inv, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice) })) }),
+    informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();
