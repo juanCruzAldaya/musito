@@ -502,7 +502,7 @@
       prMaxHp = mxHp; prMaxSd = mxSd;
       if ((prSd != null && sd < prSd - 0.01) || (prHp != null && hp < prHp - 0.01)) PR.ultBaja = ahora;
       prSd = sd; prHp = hp;
-      if (!PR.on || !(MOTOR(deseado) || deseado === 'pelea') || call('GetBlockingUiOpen') === 1) return;
+      if (!PR.on || !(MOTOR(deseado) || deseado === 'pelea' || deseado === 'manual') || call('GetBlockingUiOpen') === 1) return;      // v0.95.1: también en manual (caja 50: al terminar el PVP el modo volvió a manual y bajó la vida de 96 a 52 % sin tomar pociones: solo estaba prendido en los modos del motor); en manual solo actúa si te están bajando vida/SD
       const A = window.__agresor, pvp = !!(A && A.pvpOn && A.pvpOn()) || deseado === 'pelea';
       const atacado = pvp || ahora - PR.ultBaja < PR.ventana;
       if (!atacado) { PR.enEpisodio = false; return; }
