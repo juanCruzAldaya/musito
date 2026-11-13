@@ -54,6 +54,37 @@
   // Como el largo varía, el corte entre items es una HEURÍSTICA: la casilla siguiente es un número mayor, seguido de una cabecera plausible. Las casillas 0-11 son el equipo puesto (0 arma, 1 escudo, 2 casco, 3 armadura, 4 pantalón, 5 guantes, 6 botas, 7 alas, 8 mascota, 9-10 anillos...).
   const inv = { visto: false, t_s: null, largo: 0, hex: '', items: [], confiable: null };
   const hex2 = (a) => Array.from(a, (b) => b.toString(16).padStart(2, '0')).join(' ');
+  // ---- AFIJOS DE RAREZA (v0.98.0): solo lectura, sacados de los bytes del item que manda el servidor ----
+  // Descifrado con las cajas 58-61 y capturas del tooltip: al final del item van 2 PARES de 2 bytes [id][tirada]; `00 00` = hueco vacío.
+  //  - id - 8 = número de línea (desde 0) de afijos_es.txt (confirmado con 10 afijos).
+  //  - tirada 0-255: define el valor; la rareza sale de la tirada (Común < ~127, Raro hasta ~203, Épico desde ~204: estimado, los límites exactos no están medidos).
+  // El catálogo de nombres (afijos_es.txt) NO está en git: lo lee puente.js del archivo local y me lo manda; sin el archivo se muestran solo los números.
+  let catalogo = null;
+  window.addEventListener('message', (e) => {
+    if (e.source === window && e.data && typeof e.data.__muvigiaAfijos === 'string') catalogo = e.data.__muvigiaAfijos.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length);
+  });
+  try { window.postMessage({ __muvigiaPide: true }, '*'); } catch (e) { /* nada */ }
+  const rarezaDeTirada = (t) => (t < 127 ? 'Común' : t < 204 ? 'Raro' : 'Épico');
+  function afijosDe(it) {
+    if (!it || it.length < 11) return [];
+    const g = it[0] >> 4; if (g > 11 && g !== 13) return [];
+    const t = it.slice(it.length - 4), out = [];
+    for (let k = 0; k < 4; k += 2) { if (t[k] || t[k + 1]) out.push({ id: t[k], tirada: t[k + 1] }); }
+    return out;
+  }
+  function afijoTexto(a) {
+    const l = catalogo && catalogo[a.id - 8];
+    let nom = 'afijo #' + a.id + ' (desconocido)';
+    if (l) { const i = l.indexOf(' — '); const n = i < 0 ? l : l.slice(0, i), d = i < 0 ? '' : l.slice(i + 3); nom = (/^(grants the|the item gains)/.test(n) ? d : n + ' ' + d).replace('{v}', 'x').trim(); }
+    return nom + ' [' + rarezaDeTirada(a.tirada) + '≈, tirada ' + a.tirada + ']';
+  }
+  const cambios = [];   // últimos items que el servidor volvió a mandar (C3 24: mover / re-roll): casilla + item + afijos
+  function leerCambio(m, u8) {
+    if (!u8 || m.k !== 'C3:0x24' || u8.length < 16) return;
+    const it = u8.slice(5);
+    cambios.push({ t_s: Math.round((Date.now() - t0) / 1000), casilla: u8[4], grupo: it[0] >> 4, indice: it[1], nivel: it[2], durabilidad: it[3], afijos: afijosDe(it), hex: hex2(it) });
+    if (cambios.length > 20) cambios.shift();
+  }
   function parsearInventario(u8) {
     const L = u8.length, out = []; let pos = 6;
     const cab = (j) => j + 3 < L && u8[j + 1] <= 0xFE && (u8[j + 3] <= 15 || u8[j + 3] === 0xFF) && u8[j + 2] < 0x80;
@@ -62,7 +93,7 @@
       for (let j = pos + 9; j < Math.min(L - 3, pos + 28); j++) { if (u8[j] > slot && u8[j] <= 0x4C && cab(j) && (u8[j + 1] >> 4) <= 15) { fin = j; break; } }
       if (fin === L && L - pos > 28) break;      // no se pudo cortar: se corta acá (lo que sigue no es confiable)
       const it = u8.slice(pos + 1, fin);
-      out.push({ casilla: slot, grupo: it[0] >> 4, indice: it[1], nivel: it[2], largo: it.length, extra: hex2(it.slice(3)) });
+      out.push({ casilla: slot, grupo: it[0] >> 4, indice: it[1], nivel: it[2], largo: it.length, durabilidad: it[3], afijos: afijosDe(it), extra: hex2(it.slice(3)) });
       pos = fin;
     }
     return out;
@@ -75,7 +106,10 @@
     inv.confiable = eq.length >= 6 && eq.every((x, i, a) => i === 0 || x.casilla > a[i - 1].casilla);
   }
   const nombreDeItem = (g, i) => { try { const M = window.Module, p = M && M._MuWebGetItemNameUtf8 ? M._MuWebGetItemNameUtf8(g, i) | 0 : 0; return p ? M.UTF8ToString(p) : ''; } catch (e) { return ''; } };
-  const equipoTexto = () => (inv.visto ? inv.items.filter((x) => x.casilla <= 11).map((x) => x.casilla + ': ' + (nombreDeItem(x.grupo, x.indice) || (x.grupo + ':' + x.indice)) + ' +' + x.nivel).join(' · ') + (inv.confiable ? '' : ' (lectura dudosa)') : 'todavía no vi la lista de inventario (recargá la página con F5 y entrá al juego)');
+  const itemTexto = (x) => x.casilla + ': ' + (nombreDeItem(x.grupo, x.indice) || (x.grupo + ':' + x.indice)) + ' +' + x.nivel + (x.afijos && x.afijos.length ? ' {' + x.afijos.map(afijoTexto).join(' / ') + '}' : '');
+  const equipoTexto = () => (inv.visto
+    ? inv.items.filter((x) => x.casilla <= 11).map(itemTexto).join(' · ') + (inv.confiable ? '' : ' (lectura dudosa)') + (catalogo ? '' : ' (sin afijos_es.txt: solo números)') + (cambios.length ? ' · ÚLTIMO CAMBIO: ' + itemTexto(cambios[cambios.length - 1]) : '')
+    : 'todavía no vi la lista de inventario (recargá la página con F5 y entrá al juego)');
   // Los últimos 80 paquetes recibidos que NO son los del combate (con sus bytes completos hasta 320): para ver qué manda el servidor justo después de una acción puntual (por ejemplo cambiarle el "rare" a un item) y compararlo con lo de antes.
   const recientesRaros = [];
   function guardarReciente(m, u8) {
@@ -88,7 +122,7 @@
     if (!m) return;
     if (dir === 'rx' && u8) for (const f of escRx) { try { f(u8); } catch (e) { /* nada */ } }
     if (dir === 'rx' && u8) guardarMuestra(m, u8);
-    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } try { leerInventario(m, u8); } catch (e) { /* nada */ } try { guardarReciente(m, u8); } catch (e) { /* nada */ } }
+    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } try { leerInventario(m, u8); } catch (e) { /* nada */ } try { leerCambio(m, u8); } catch (e) { /* nada */ } try { guardarReciente(m, u8); } catch (e) { /* nada */ } }
     const c = tabla[m.k] || (tabla[m.k] = { n: 0, min: 1e9, max: 0, suma: 0 });
     c.n++; c.min = Math.min(c.min, m.len); c.max = Math.max(c.max, m.len); c.suma += m.len;
     total[dir]++;
@@ -138,7 +172,7 @@
     cuenta: (dir, k) => ((dir === 'tx' ? tx : rx)[k] || { n: 0 }).n,
     rareza: () => rareza, recientes: () => recientesRaros,
     equipo: () => equipoTexto(),
-    inventario: () => ({ ...inv, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice) })) }),
+    inventario: () => ({ ...inv, catalogo_cargado: !!catalogo, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice), afijos_txt: (x.afijos || []).map(afijoTexto) })), cambios: cambios.map((c) => ({ ...c, nombre: nombreDeItem(c.grupo, c.indice), afijos_txt: c.afijos.map(afijoTexto) })) }),
     informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();

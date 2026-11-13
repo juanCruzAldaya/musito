@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MuMagdalenas Vigía",
-  "version": "0.97.0",
+  "version": "0.98.0",
   "description": "Panel de estado, avisos a Discord y vigía del Helper nativo para MU Magdalenas.",
   "permissions": [
     "storage",
@@ -12,6 +12,12 @@
     "https://discord.com/*",
     "https://discordapp.com/*",
     "https://play.mumagdalenas.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["afijos_es.txt"],
+      "matches": ["https://play.mumagdalenas.com/*"]
+    }
   ],
   "background": {
     "service_worker": "background.js"

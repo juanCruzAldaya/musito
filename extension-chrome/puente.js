@@ -7,9 +7,14 @@
         window.postMessage({ __muvigiaCfg: true, cfg: { vigia: !!c.vigia, avisos: c.avisos !== false, joyas: !!c.joyas, hechizo: c.hechizo !== false } }, '*'));
     } catch (e) { /* extensión recargada */ }
   };
+  // Catálogo de afijos (archivo local afijos_es.txt, fuera de git): si no existe, no pasa nada.
+  const mandarAfijos = () => {
+    try { fetch(chrome.runtime.getURL('afijos_es.txt')).then((r) => (r.ok ? r.text() : '')).then((t) => { if (t) window.postMessage({ __muvigiaAfijos: t }, '*'); }).catch(() => { /* sin archivo */ }); } catch (e) { /* nada */ }
+  };
+  mandarAfijos();
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data) return;
-    if (e.data.__muvigiaPide) return mandarCfg();
+    if (e.data.__muvigiaPide) { mandarAfijos(); return mandarCfg(); }
     if (e.data.__muvigia) {
       try {
         chrome.runtime.sendMessage({
