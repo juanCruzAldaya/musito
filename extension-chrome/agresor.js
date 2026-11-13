@@ -255,6 +255,11 @@
     peleando = pelea; Mo.fijar('pelea', raton ? 'PVP con el mouse' : uno ? 'PVP a ' + PVP.unoNombre : 'F10: jugador al azar'); call('SetPkMode', uno || raton ? 0 : 1);      // contra uno solo: el modo PK se prende recién cuando la placa confirma el nombre
     fin('prendido (modo anterior ' + prev + ', PK antes ' + pk0 + ')');
     let avisoSin = 0, sinJugDesde = 0;
+    // v0.94.0 SONDA: un jugador PARADO no manda paquetes de movimiento, así que no tiene posición ni id y el modo mouse "no veía a nadie" (cajas 41-47). Si hay algún jugador cerca (lista del juego) que no es de tu party/clan,
+    // se prueba con un clic derecho en el PUNTERO (con el modo PK apagado) y se lee la placa: si es un jugador cercano que no es tuyo, se engancha igual (id desconocido = SONDA; después se aprende por los hechizos).
+    const SONDA = -2; let sondeoHasta = 0; const nomFrio = new Map();
+    const yoNm0 = () => (str('GetHeroNameUtf8') || '').trim().toLowerCase();
+    const sondeoOk = () => { if (!raton || CUR.x == null || Date.now() < sondeoHasta) return false; try { if (S.enPantalla && !S.enPantalla({ x: CUR.x, y: CUR.y })) return false; } catch (e) { return false; } const yo = yoNm0(); return jugadoresCerca().some((j) => !j.party && !j.clan && j.nombre.toLowerCase() !== yo); };
     const distCur = (x) => { const q = pos.get(x), px = q && S.pixelAtaque({ x: q.tx, y: q.ty }); return px && CUR.x != null ? Math.hypot(px.x - CUR.x, px.y - CUR.y) : Infinity; };
     try {
       while (PVP.on && vivo) {
@@ -267,6 +272,7 @@
           call('SetPkMode', 0); PVP.enganchado = false;
           const cu = candidatosPvp(40000).filter((x) => { const n = nomDe(x); return !(n && (enParty(n) || enTexto(str('GetGuildMembersUtf8'), n))); });
           cand = cu.filter((x) => distCur(x) <= RADIO_CUR).sort((p, q) => distCur(p) - distCur(q));
+          if (!cand.length && sondeoOk()) cand = [SONDA];
           if (!cand.length) { if (Date.now() - avisoSin > 15000) { avisoSin = Date.now(); log(etq + ': ' + (CUR.x == null ? 'todavía no moviste el mouse' : 'ningún jugador cerca del puntero') + ', espero'); } await dormir(80); continue; }
         } else if (uno) {
       // contra uno solo: por nombre. Nunca se ataca a otro; si no está a la vista, espera
@@ -288,9 +294,9 @@
           id = ag != null ? ag : cand.slice().sort((p, q) => cheb({ x: pos.get(p).tx, y: pos.get(p).ty }, h) - cheb({ x: pos.get(q).tx, y: pos.get(q).ty }, h))[0];
         } else id = uno || raton ? cand[0] : cand[Math.floor(Math.random() * cand.length)];
         PVP.objetivos++; pelea.id = id; const t0 = Date.now(); let casts = 0, sinCasts = 0, motivo = 'tiempo', ultCheck = 0;
-        const j0 = pos.get(id); const px0 = S.pixelAtaque({ x: j0.tx, y: j0.ty });
+        const j0 = pos.get(id); const px0 = id === SONDA ? { x: CUR.x, y: CUR.y } : S.pixelAtaque({ x: j0.tx, y: j0.ty });
         const sigueCur = () => raton && CUR.x != null;      // v0.89.2: en el modo mouse el clic va donde está el PUNTERO (no a la casilla calculada: un jugador que camina o está en una multitud no está donde dicen sus paquetes)
-        const curIni = sigueCur() && distCur(id) <= RADIO_CUR ? { x: CUR.x, y: CUR.y } : null;
+        const curIni = sigueCur() && (id === SONDA || distCur(id) <= RADIO_CUR) ? { x: CUR.x, y: CUR.y } : null;
         if (curIni) S.derecho.iniciar(curIni.x, curIni.y); else S.derecho.iniciar(px0.x, px0.y);
         await dormir(250);
         if (uno) {      // ¿es él? la placa se mira SIN modo PK (si es otro, no le pego); recién si coincide se prende el PK y salen los pulsos
@@ -307,14 +313,16 @@
         if (raton) {      // ¿quién es? la placa se mira SIN modo PK: si es de tu party/clan (o no se lee) no se le pega
           let nm = ''; for (let k = 0; k < 14 && !nm; k++) { nm = (str('GetTargetPlateUtf8').split('\t')[0] || '').trim(); if (!nm) await dormir(30); }
           const yoNm = (str('GetHeroNameUtf8') || '').trim().toLowerCase();
-          if (!nm || (yoNm && nm.toLowerCase() === yoNm) || enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) {
+          const sondaMal = id === SONDA && nm && (!jugadoresCerca().some((j) => j.nombre === nm) || (nomFrio.get(nm.toLowerCase()) || 0) > Date.now());      // la placa es un bicho, o alguien que acabo de matar
+          if (!nm || sondaMal || (yoNm && nm.toLowerCase() === yoNm) || enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) {
             try { const c = S.centro(); S.derecho.soltar(c.x, c.y); } catch (e) { /* nada */ }
             if (nm && yoNm && nm.toLowerCase() === yoNm) { frio.set(id, Date.now() + 3600000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': #' + id + ' soy yo mismo (placa ' + nm + '): lo ignoro'); }
             else if (nm) { nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); frio.set(id, Date.now() + 3600000); PVP.descartados++; log(etq + ': #' + id + ' (' + nm + ') es de tu party/clan: no lo toco'); }
             else { frio.set(id, Date.now() + 4000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': no pude leer la placa de #' + id + ' (el clic derecho sin modo PK quizá no lo selecciona)'); }
+            if (id === SONDA) sondeoHasta = Date.now() + (nm && (enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) ? 1500 : 900);
             await dormir(250); continue;
           }
-          objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + ' (#' + id + ')');
+          objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + (id === SONDA ? ' (parado: lo encontré con el puntero, sin id)' : ' (#' + id + ')'));
         }
         const timer = setInterval(() => { try { pulsoPvp(); } catch (e) { /* nada */ } }, 10);
         let c1 = P.cuenta('tx', 'C3:0x19'), tC = Date.now(), idReal = null, vacioDesde = 0;      // idReal (v0.89.1): a quién van de verdad los hechizos; un jugador parado no manda movimientos y el id elegido puede ser otro (caja 41: elegí #512 = yo, los hechizos iban al #914)
@@ -360,6 +368,7 @@
         }
         PVP.ult = 'jugador #' + id + ': ' + motivo + ' · ' + Math.round((Date.now() - t0) / 1000) + ' s · ' + casts + ' hechizos'; log(etq + ': ' + PVP.ult);
         pelea.vidaMin = Math.min(pelea.vidaMin, vidaPct());
+        if (raton) { if (id === SONDA) sondeoHasta = Date.now() + (/LO MATÉ/.test(motivo) ? 4000 : 1500); if (objNm && /LO MATÉ/.test(motivo)) nomFrio.set(objNm.toLowerCase(), Date.now() + 5000); if (objNm && /no salen hechizos/.test(motivo)) nomFrio.set(objNm.toLowerCase(), Date.now() + 60000); }
         if (raton) { call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) { frio.set(id, Date.now() + 4000); if (idReal != null) frio.set(idReal, Date.now() + 4000); } }
         if (uno) { frio.delete(id); call('SetPkMode', 0); if (/LO MATÉ/.test(motivo)) { fin('lo maté: termino'); break; } }
         if (/morí|vida baja/.test(motivo)) break;
