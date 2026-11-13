@@ -23,11 +23,37 @@
     const nombre = { 0xC1: 'C1', 0xC2: 'C2', 0xC3: 'C3', 0xC4: 'C4' }[h] || ('0x' + h.toString(16));
     return { k: nombre + ':' + (cod === undefined ? '?' : '0x' + cod.toString(16).padStart(2, '0')), h: nombre, cod, len: u8.length };
   }
+  // ---- RAREZA DE LOS ITEMS (v0.96.0): ¿por qué canal le llega al cliente el texto "Rareza: Épico", "[Raro] Contraataque: 9,3 %..."? ----
+  // Solo lectura: de los paquetes recibidos que NO son los frecuentes del combate ni el chat, busca esas palabras (UTF-8 y UTF-16) y guarda hasta 40 aciertos (código, largo, texto cercano y los primeros bytes).
+  // Si salen, el texto viaja en un paquete y se puede ver su formato; si no salen, el cliente lo arma con una tabla propia a partir de los bytes del item.
+  const FRECUENTES = new Set(['C1:0x48', 'C3:0x1e', 'C1:0x17', 'C2:0x13', 'C3:0x19', 'C1:0x14', 'C3:0x16', 'C1:0x26', 'C1:0x11', 'C1:0xe7', 'C1:0xd4', 'C3:0x22', 'C1:0x18', 'C2:0x21', 'C1:0x00', 'C1:0x02', 'C1:0x0d', 'C1:0x07', 'C1:0xf3', 'C1:0x15']);
+  const PALABRAS = ['Rareza', 'Contraataque', 'Templanza', 'Soplo de', 'Bloqueo', 'Rarity', 'Epic', 'Raro]', 'pico]'];
+  const rareza = { hits: [], paquetesRevisados: 0, porCodigo: {} };
+  function sniffRareza(m, u8) {
+    if (!u8 || u8.length < 24 || FRECUENTES.has(m.k)) return;
+    rareza.paquetesRevisados++;
+    let s8 = '', s16 = '';
+    for (let i = 0; i < u8.length; i++) s8 += String.fromCharCode(u8[i]);
+    for (let i = 0; i + 1 < u8.length; i += 2) s16 += String.fromCharCode(u8[i] | (u8[i + 1] << 8));
+    let s16b = ''; for (let i = 1; i + 1 < u8.length; i += 2) s16b += String.fromCharCode(u8[i] | (u8[i + 1] << 8));
+    for (const w of PALABRAS) {
+      const enc = s8.indexOf(w) >= 0 ? 'utf8' : (s16.indexOf(w) >= 0 || s16b.indexOf(w) >= 0) ? 'utf16' : null;
+      if (!enc) continue;
+      rareza.porCodigo[m.k] = (rareza.porCodigo[m.k] || 0) + 1;
+      if (rareza.hits.length < 40) {
+        const base = enc === 'utf8' ? s8 : (s16.indexOf(w) >= 0 ? s16 : s16b), i = base.indexOf(w);
+        let txt = ''; try { txt = enc === 'utf8' ? decodeURIComponent(escape(base.slice(i, i + 120))) : base.slice(Math.max(0, i - 10), i + 120); } catch (e) { txt = base.slice(i, i + 120); }
+        rareza.hits.push({ t_s: Math.round((Date.now() - t0) / 1000), paquete: m.k, largo: u8.length, palabra: w, codificacion: enc, texto: txt.replace(/[^\x20-\x7E\u00A0-\u024F]/g, '·'), hex: Array.from(u8.slice(0, 160), (b) => b.toString(16).padStart(2, '0')).join(' ') });
+      }
+      return;
+    }
+  }
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
     if (dir === 'rx' && u8) for (const f of escRx) { try { f(u8); } catch (e) { /* nada */ } }
     if (dir === 'rx' && u8) guardarMuestra(m, u8);
+    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } }
     const c = tabla[m.k] || (tabla[m.k] = { n: 0, min: 1e9, max: 0, suma: 0 });
     c.n++; c.min = Math.min(c.min, m.len); c.max = Math.max(c.max, m.len); c.suma += m.len;
     total[dir]++;
@@ -75,6 +101,7 @@
   window.__paquetes = {
     alRecibir: (f) => escRx.push(f), alEnviar: (f) => escTx.push(f),
     cuenta: (dir, k) => ((dir === 'tx' ? tx : rx)[k] || { n: 0 }).n,
-    informe: () => ({ hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
+    rareza: () => rareza,
+    informe: () => ({ rareza_sniff: rareza, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();
