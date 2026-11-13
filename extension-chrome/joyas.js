@@ -211,8 +211,19 @@
     const lista = ant.nombres.concat(nuevos); let texto = lista.join('\n');
     while (new TextEncoder().encode(texto).length > 2000 && lista.length > 1) { lista.pop(); nuevos.pop(); texto = lista.join('\n'); }      // tope del juego: 2048 bytes
     let ptr = 0, r = null; HELP.intentos++;
-    try { ptr = window.muAllocateUtf8(texto); r = m._MuWebHelperSetPickupNamesUtf8(ptr, activar ? 1 : 0); } catch (e) { return { ok: false, motivo: 'error: ' + String(e && e.message || e).slice(0, 80) }; } finally { try { if (ptr) m._free(ptr); } catch (e) { /* nada */ } }
-    const des = helperLeer(); HELP.ult = 'agregué ' + nuevos.length + ' nombre(s) [' + nuevos.join(', ') + '] · el juego devolvió ' + r + ' · ahora la lista tiene ' + (des.nombres || []).length + ' y está ' + (des.activo ? 'ACTIVADA' : 'apagada'); L('helper: ' + HELP.ult);
+    let diag = '';
+    const llamar = (p) => m._MuWebHelperSetPickupNamesUtf8(p, activar ? 1 : 0);
+    try {
+      ptr = window.muAllocateUtf8(texto);
+      let leido = ''; try { leido = m.UTF8ToString(ptr); } catch (e) { /* nada */ }
+      diag = ' [ptr ' + ptr + ', el juego lee ' + JSON.stringify(leido).slice(0, 50) + ']';
+      r = llamar(ptr);
+      if (r === -1 || r == null) {      // caja 45: devolvió -1 (puntero nulo o texto > 2048 bytes): 2º intento reservando yo la memoria con malloc, con el 0 final
+        let p2 = 0;
+        try { const bytes = new TextEncoder().encode(texto); p2 = m._malloc ? m._malloc(bytes.length + 1) : 0; if (p2 && m.HEAPU8) { m.HEAPU8.set(bytes, p2); m.HEAPU8[p2 + bytes.length] = 0; r = llamar(p2); diag += ' · 2º intento con malloc (' + p2 + ') → ' + r; } else diag += ' · sin malloc/HEAPU8'; } catch (e) { diag += ' · el 2º intento falló'; } finally { try { if (p2) m._free(p2); } catch (e) { /* nada */ } }
+      }
+    } catch (e) { return { ok: false, motivo: 'error: ' + String(e && e.message || e).slice(0, 80) }; } finally { try { if (ptr) m._free(ptr); } catch (e) { /* nada */ } }
+    const des = helperLeer(); HELP.ult = 'agregué ' + nuevos.length + ' nombre(s) [' + nuevos.join(', ') + '] · el juego devolvió ' + r + diag + ' · ahora la lista tiene ' + (des.nombres || []).length + ' y está ' + (des.activo ? 'ACTIVADA' : 'apagada'); L('helper: ' + HELP.ult);
     return { ok: r !== -1, devolvio: r, agregados: nuevos, ...des };
   }
   const nombresPaewang = () => PAEWANG.map((p) => nombreItem(p.g, p.i)).filter(Boolean);
