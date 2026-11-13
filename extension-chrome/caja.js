@@ -144,7 +144,7 @@
       caminos_grabados: window.__ciclo && window.__ciclo.rutas ? window.__ciclo.rutas() : null,
       mi_spot: window.__ciclo && window.__ciclo.miSpot ? window.__ciclo.miSpot.datos() : null,
       bichos_ahora: B && B.ahora ? B.ahora() : null,
-      paquetes: P && P.informe ? (() => { const i = P.informe(); return { segundos: i.segundos, total: i.total, recibidos: i.recibidos.slice(0, 25), enviados: i.enviados.slice(0, 15), muestras: i.muestras, casts_tx: i.castsTx, enviados_por_10s: i.porVentanaDe10sEnviados, recibidos_por_10s: i.porVentanaDe10s }; })() : null,
+      paquetes: P && P.informe ? (() => { const i = P.informe(); return { rareza_sniff: i.rareza_sniff || null, segundos: i.segundos, total: i.total, recibidos: i.recibidos.slice(0, 25), enviados: i.enviados.slice(0, 15), muestras: i.muestras, casts_tx: i.castsTx, enviados_por_10s: i.porVentanaDe10sEnviados, recibidos_por_10s: i.porVentanaDe10s }; })() : null,
     };
   }
   function bajar() {
