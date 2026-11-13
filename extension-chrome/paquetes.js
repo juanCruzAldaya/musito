@@ -6,13 +6,13 @@
   const rx = {}, tx = {};   // "C1:13" -> {n, min, max, suma}
   const ult = [];            // últimos 40 recibidos: [t_ms, cabecera, código, largo]
   const t0 = Date.now();
-  const MUESTREAR = new Set(['C3:0x16', 'C2:0x20', 'C2:0x21', 'C2:0x31', 'C1:0x00', 'C3:0x22', 'C1:0x11', 'C1:0x26', 'C1:0xd4', 'C1:0x18', 'C1:0x15', 'C3:0x19', 'C1:0x07', 'C1:0xe7', 'C2:0xe7', 'C1:0xe8', 'C1:0x2f', 'C1:0x44', 'C2:0x65', 'C2:0x12', 'C1:0xf3']);      // v0.96.2: canales raros del servidor (0xE7/0xE8/0xF3/0x2F/0x44/0x65): se guardan ejemplos
+  const MUESTREAR = new Set(['C3:0x16', 'C2:0x20', 'C2:0x21', 'C2:0x31', 'C1:0x00', 'C3:0x22', 'C1:0x11', 'C1:0x26', 'C1:0xd4', 'C1:0x18', 'C1:0x15', 'C3:0x19', 'C1:0x07', 'C1:0xe7', 'C2:0xe7', 'C1:0xe8', 'C1:0x2f', 'C1:0x44', 'C2:0x65', 'C2:0x12', 'C1:0xf3', 'C2:0xf3', 'C4:0xf3', 'C2:0xe8']);      // v0.96.2: canales raros del servidor (0xE7/0xE8/0xF3/0x2F/0x44/0x65): se guardan ejemplos
   const muestras = {};   // paquete -> lista (máx. 6, con largos distintos) de bytes en hexadecimal
   function guardarMuestra(m, u8) {
     if (!MUESTREAR.has(m.k)) return;
     const l = muestras[m.k] || (muestras[m.k] = []);
     if (l.length >= 6 || l.some((x) => x.largo === u8.length && l.length >= 3)) return;
-    l.push({ largo: u8.length, hex: Array.from(u8.slice(0, m.k === 'C2:0xe7' ? 256 : 96), (b) => b.toString(16).padStart(2, '0')).join(' ') });
+    l.push({ largo: u8.length, hex: Array.from(u8.slice(0, /^C[24]:0x(e7|f3|e8)$/.test(m.k) ? 256 : 96), (b) => b.toString(16).padStart(2, '0')).join(' ') });
   }
   let total = { rx: 0, tx: 0 }, ventanas = {}, ventanasTx = {};
 
