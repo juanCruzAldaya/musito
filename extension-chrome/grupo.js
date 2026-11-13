@@ -238,7 +238,8 @@
   const LOGB = (t) => { BUF.log.push({ t: new Date().toISOString().slice(11, 19), txt: t }); if (BUF.log.length > 40) BUF.log.shift(); };
   const buscarCritico = () => { const h = CFG.buscar(listaHab()); if (h) { BUF.nombre = h.nombre; return h.tipo; } return 0; };
   const miPid = () => { try { const A = window.__agresor, h = A && A.heroId ? A.heroId() : null; return h != null ? h : BUF.pid; } catch (e) { return BUF.pid; } };
-  const cadaMs = () => (BUF.eff != null && miPid() != null ? 600000 : 120000);      // red de seguridad: con el efecto reconocido confía en el aviso del servidor; si no, renueva cada 2 min
+  // red de seguridad (v0.93.0): renueva un poco ANTES de que se acabe el buff. Con la duración ya medida (la mayor vista) = duración - 15 s (mínimo 60 s); si no, cada 2 min. Antes, con el efecto "reconocido", esperaba 10 min: si el efecto era el equivocado el buff de crítico quedaba caído casi todo el tiempo (caja 44).
+  const cadaMs = () => (BUF.durS ? Math.max(60000, Math.min(600000, (BUF.durS - 15) * 1000)) : 120000);
   function onEfecto(u) {
     if (!u || u[0] !== 0xC1 || u[1] !== 7 || u[2] !== 0x07 || u.length < 7) return;
     const est = u[3] ? 1 : 0, pid = (u[4] << 8) | u[5], eff = u[6], ahora = Date.now(), k = eff + (est ? '+' : '-');
@@ -254,13 +255,14 @@
     if (BUF.eff == null || eff !== BUF.eff) return;
     const mio = miPid(); if (mio == null || pid !== mio) return;
     if (est) { BUF.activo = true; if (!BUF.iniT) BUF.iniT = ahora; }
-    else { BUF.activo = false; BUF.termino++; if (BUF.iniT) { BUF.durS = Math.round((ahora - BUF.iniT) / 1000); } BUF.iniT = 0; BUF.reintentoT = 0; LOGB('el buff de ' + CFG.txt + ' terminó' + (BUF.durS ? ' (duró ' + BUF.durS + ' s)' : '') + ': lo relanzo'); }
+    else { BUF.activo = false; BUF.termino++; if (BUF.iniT) { BUF.durS = Math.max(BUF.durS || 0, Math.round((ahora - BUF.iniT) / 1000)); } BUF.iniT = 0; BUF.reintentoT = 0; LOGB('el buff de ' + CFG.txt + ' terminó' + (BUF.durS ? ' (duró ' + BUF.durS + ' s)' : '') + ': lo relanzo'); }
   }
   async function lanzarBuff(motivo) {
     const m = M(), Mo = window.__modo, S = window.__pantalla, Pq = window.__paquetes;
     if (INV.ocupado || BUFS.some((b) => b.ocupado)) return { ok: false, motivo: 'ya estoy lanzando algo' };
     if (!m || m._MuWebGetSceneFlag() !== 5 || !(m._MuWebGetPlayerLife() > 0)) return { ok: false, motivo: 'no estoy en el juego o estoy muerto' };
     const id0 = BUF.id || buscarCritico();
+    { const efEsp = CFG.eff && CFG.eff[id0]; if (efEsp != null && BUF.eff !== efEsp) { LOGB('corrijo el efecto del buff: ' + BUF.eff + ' → ' + efEsp + ' (el que da la habilidad ' + id0 + ' en este servidor)'); BUF.eff = efEsp; BUF.votos = {}; BUF.durS = null; BUF.iniT = 0; guardarBUF(); } }      // caja 44: el de crítico había aprendido el efecto 5 (otro buff) en vez del 148 y nunca veía terminar el suyo
     if (!id0) { BUF.fallos++; BUF.ult = 'no encontré la habilidad de ' + CFG.txt + ' en tu lista'; LOGB(BUF.ult); return { ok: false, motivo: BUF.ult }; }
     BUF.ocupado = true; INV.ocupado = true;
     const prev = Mo && Mo.deseado ? Mo.deseado() : null, farmeando = ['sostener', 'pulsos', 'auto'].includes(prev);
@@ -320,9 +322,9 @@
     BUFS.push(BUF);
     return { BUF, onEfecto, API: BUFAPI };
   }
-  const B1 = crearBuff({ clave: 'muBuffCriticoV1', txt: 'crítico', buscar: (l) => l.find((x) => /critic/.test(norm(x.nombre))) });
+  const B1 = crearBuff({ clave: 'muBuffCriticoV1', txt: 'crítico', eff: { 517: 148 }, buscar: (l) => l.find((x) => /critic/.test(norm(x.nombre))) });
   // Aumentar vida (Swell Life, habilidad 48; en el juego en español "Aumentar vida"): buff de grupo que gasta 22 de maná y 24 de AG. Pedido del usuario: tenerlo puesto todo el tiempo como el de crítico (v0.90.0).
-  const B2 = crearBuff({ clave: 'muBuffVidaV1', txt: 'aumentar vida', buscar: (l) => l.find((x) => x.tipo === 48) || l.find((x) => /swell|fortitude|aumentar vida/.test(norm(x.nombre))) });
+  const B2 = crearBuff({ clave: 'muBuffVidaV1', txt: 'aumentar vida', eff: { 48: 8 }, buscar: (l) => l.find((x) => x.tipo === 48) || l.find((x) => /swell|fortitude|aumentar vida/.test(norm(x.nombre))) });
   const BUFAPI = B1.API, BUFAPI2 = B2.API;
   window.__grupoInvocarOnChat = (u) => { onChat(u); B1.onEfecto(u); B2.onEfecto(u); };       // siempre apunta a la instancia más nueva (recarga en caliente)
   window.__grupo = {
