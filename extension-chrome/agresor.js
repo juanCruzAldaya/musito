@@ -319,7 +319,7 @@
             if (nm && yoNm && nm.toLowerCase() === yoNm) { frio.set(id, Date.now() + 3600000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': #' + id + ' soy yo mismo (placa ' + nm + '): lo ignoro'); }
             else if (nm) { nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); frio.set(id, Date.now() + 3600000); PVP.descartados++; log(etq + ': #' + id + ' (' + nm + ') es de tu party/clan: no lo toco'); }
             else { frio.set(id, Date.now() + 4000); PVP.sinPlaca = (PVP.sinPlaca || 0) + 1; if (PVP.sinPlaca % 5 === 1) log(etq + ': no pude leer la placa de #' + id + ' (el clic derecho sin modo PK quizá no lo selecciona)'); }
-            if (id === SONDA) sondeoHasta = Date.now() + (nm && (enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) ? 1500 : 900);
+            if (id === SONDA) sondeoHasta = Date.now() + (nm && (enParty(nm) || enTexto(str('GetGuildMembersUtf8'), nm)) ? 4000 : 900);      // si el puntero está sobre alguien de tu party/clan no se lo vuelve a sondear cada 1,5 s (caja 48: 6 clics seguidos sobre Mundu)
             await dormir(250); continue;
           }
           objNm = nm; nombreDe.set(id, { nm: nm.toLowerCase(), t: Date.now() }); call('SetPkMode', 1); PVP.enganchado = true; log(etq + ': atacando a ' + nm + (id === SONDA ? ' (parado: lo encontré con el puntero, sin id)' : ' (#' + id + ')'));
