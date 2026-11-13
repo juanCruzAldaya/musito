@@ -64,6 +64,7 @@
     if (e.source === window && e.data && typeof e.data.__muvigiaAfijos === 'string') catalogo = e.data.__muvigiaAfijos.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length);
   });
   try { window.postMessage({ __muvigiaPide: true }, '*'); } catch (e) { /* nada */ }
+  const AFIJOS_VISTOS = { 129: 'Cazador de jefes — +{v}% daño vs jefes' };   // ids que faltan en afijos_es.txt, vistos en el tooltip del juego
   const rarezaDeTirada = (t) => (t < 127 ? 'Común' : t < 204 ? 'Raro' : 'Épico');
   function afijosDe(it) {
     if (!it || it.length < 11) return [];
@@ -73,7 +74,7 @@
     return out;
   }
   function afijoTexto(a) {
-    const l = catalogo && catalogo[a.id - 8];
+    const l = (catalogo && catalogo[a.id - 8]) || AFIJOS_VISTOS[a.id];
     let nom = 'afijo #' + a.id + ' (desconocido)';
     if (l) { const i = l.indexOf(' — '); const n = i < 0 ? l : l.slice(0, i), d = i < 0 ? '' : l.slice(i + 3); nom = (/^(grants the|the item gains)/.test(n) ? d : n + ' ' + d).replace('{v}', 'x').trim(); }
     return nom + ' [' + rarezaDeTirada(a.tirada) + '≈, tirada ' + a.tirada + ']';
