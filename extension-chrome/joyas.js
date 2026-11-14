@@ -137,10 +137,12 @@
   const KUNDUN = [8, 9, 10, 11].map((lv) => ({ g: 14, i: 11, lv }));
   // v0.99.6 PARA PROBAR EL CLIC (pedido: "ponete algo que levante de acá"): Rollo de Arcángel +8 (13:16 nivel 8) y Hueso Sangriento +8 (13:17 nivel 8), los más abundantes del piso en Devias/mapa 60 (caja 63: x33 y x35). Se sacan con Lab > "Reiniciar firmas" o avisándome.
   const PRUEBA = [{ g: 13, i: 16, lv: 8 }, { g: 13, i: 17, lv: 8 }];
-  LOOT.firmas = LOOT.firmas.concat(PAEWANG, KUNDUN, PRUEBA); LOOT.nombres = [];
+  // v0.100.2 (pedido del usuario: "ahora solo dejemos el id de los guantes reales"): la lista queda SOLO con los Guantes Reales (10:51, cualquier nivel). Lo guardado de antes se reemplaza una vez (muLootV1 v7).
+  const SOLO = [{ g: 10, i: 51, lv: null }];
+  LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = [];
   const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 6, on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (!(s.v >= 2)) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); if (!(s.v >= 7)) { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; } } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 7, on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const cacheNom = new Map();
@@ -289,7 +291,7 @@
       guardarLoot();
       return { ok: true, firma: firmaTxt(f), a: chebJ(it, h) };
     },
-    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }].concat(KUNDUN, PAEWANG, PRUEBA); LOOT.nombres = []; guardarLoot(); return LOOT.firmas.slice(); },
+    reiniciar: () => { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; guardarLoot(); return LOOT.firmas.slice(); },
     nombreItem,
     // busca en TODOS los items del juego los que tengan ese texto en el nombre (idioma del cliente): { ok, encontrados: ['10:51 Guantes ...'] }
     buscarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; const m = M(); if (!m || !m._MuWebGetItemNameUtf8) return { ok: false, motivo: 'el juego no tiene la consulta de nombres' }; const out = []; for (let g = 0; g <= 15; g++) for (let i = 0; i <= 511; i++) { const n = nombreItem(g, i); if (n && normN(n).includes(q)) out.push({ g, i, nombre: n }); if (out.length > 200) break; } return { ok: true, encontrados: out }; },
