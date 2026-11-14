@@ -129,7 +129,7 @@
   // El cliente ya junta solo lo que cae cerca (~1 pedido/s). Esto va a buscar, sin forjar paquetes, SOLO los items con la firma elegida: camina hasta la casilla del item (pasar por encima lo levanta),
   // sin pulsos mientras camina, y la correa del modo lo trae de vuelta al ancla. Firma = grupo:índice y nivel que trae el aviso de item caído (C2 0x20: byte0>>4 = grupo, byte1 = índice, byte2 = nivel).
   // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
-  const LOOT = { on: true, clic: false, paquete: true, pedidos: 0, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, vueltas: 0, noVolvio: 0, clics: 0, offOk: null, offStats: {}, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
+  const LOOT = { on: true, clic: false, paquete: true, esperaMs: 40000, pedidos: 0, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, vueltas: 0, noVolvio: 0, clics: 0, offOk: null, offStats: {}, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
   // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
   const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }];      // las botas (11:51) YA las tiene: se excluyeron a pedido (v0.92.0)
   const EXCLUIDOS = [{ g: 11, i: 51 }];
@@ -154,11 +154,11 @@
   const OFFS_CLIC = [[0, -22], [0, -36], [0, -8], [0, -50], [-28, -22], [28, -22], [0, 8], [-56, -22], [56, -22], [0, -64], [-28, -42], [28, -42]];
   async function juntar(it) {
     LOOT.ocupado = true; LOOT.objetivos++;
-    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0, ult = null, pidio = false, pqs = 0, ajustes = 0; const chk = () => { const P4 = window.__paquetes; if (ult && !pidio && P4 && P4.pedidosDe && P4.pedidosDe(it.id) > ult.p0) { pidio = true; const e = LOOT.offStats[ult.o.join(',')] = LOOT.offStats[ult.o.join(',')] || { clics: 0, pedidos: 0 }; e.pedidos++; LOOT.offOk = ult.o; } }; const lista = LOOT.offOk ? [LOOT.offOk].concat(OFFS_CLIC.filter((x) => x.join(',') !== LOOT.offOk.join(','))) : OFFS_CLIC; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
+    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0, ult = null, pidio = false, pqs = 0, ajustes = 0, ultPed = 0; const chk = () => { const P4 = window.__paquetes; if (ult && !pidio && P4 && P4.pedidosDe && P4.pedidosDe(it.id) > ult.p0) { pidio = true; const e = LOOT.offStats[ult.o.join(',')] = LOOT.offStats[ult.o.join(',')] || { clics: 0, pedidos: 0 }; e.pedidos++; LOOT.offOk = ult.o; } }; const lista = LOOT.offOk ? [LOOT.offOk].concat(OFFS_CLIC.filter((x) => x.join(',') !== LOOT.offOk.join(','))) : OFFS_CLIC; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
     let dest = null, h0 = null, volvio = null, msVuelta = 0; try { dest = Mo.ancla ? Mo.ancla() : null; h0 = heroJ(); } catch (e) { /* nada */ }
     try {
       Mo.viaje(true);
-      while ((Date.now() - t0 < 7000 || (llegoT && Date.now() - llegoT < 5800 && Date.now() - t0 < 14000)) && vivoJ && LOOT.on) {      // v0.100.10: el tope de 7 s era para CAMINAR; ya parado esperando el servidor tiene sus propios 5,8 s (caja 77: 'tiempo' en plena espera)
+      while ((Date.now() - t0 < 7000 || (llegoT && Date.now() - llegoT < LOOT.esperaMs + 1200 && Date.now() - t0 < LOOT.esperaMs + 15000)) && vivoJ && LOOT.on) {      // v0.100.10: el tope de 7 s era para CAMINAR; ya parado esperando el servidor tiene sus propios 5,8 s (caja 77: 'tiempo' en plena espera)
         chk(); const aun = B.suelo().find((x) => x.id === it.id), h = heroJ();
         if (!aun) {      // v0.99.5: "juntado" solo si el SERVIDOR lo confirmó (paquetes.recogidas.ok de ese tipo subió); antes alcanzaba con que el item desapareciera con vos cerca (caja 65: 1 "juntada" falsa)
           ok = chebJ(it, h) <= 2; const P2 = window.__paquetes; if (ok && P2 && P2.recogidas && rc0 != null) ok = (P2.recogidas().ok[keyIt] || 0) > rc0;
@@ -178,13 +178,15 @@
           // NOMBRE (la etiqueta flota por encima de la casilla) o su modelo, así que se prueban puntos más arriba (como hace atacar() con los bichos) y se mira si el CLIENTE manda el pedido de recoger (tx C3 22 con el id del item): ese es el acierto y se recuerda el punto.
           if (!llegoT) llegoT = Date.now();
           else if (LOOT.paquete && window.__paquetes && window.__paquetes.recoger) {
-            // v0.100.0 (pedido del usuario: "intentemos mandar el paquete"): el MISMO pedido que manda el cliente al clickear un item: C3 05 22 [id]. Hasta 3, uno cada 400 ms; "juntado" solo si el servidor lo confirma.
-            const desdeP = Date.now() - llegoT;
-            if (pqs < 3 && desdeP > 350 + pqs * 800) { const rr = window.__paquetes.recoger(it.id); pqs++; LOOT.pedidos++; if (!rr || !rr.ok) { if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } pqs--; } }
-            else if (pqs >= 3) {      // v0.100.6 (caja 76): el servidor SÍ lo dio una vez pero la confirmación llegó tarde y quedó como "no lo dio": se espera hasta 1,5 s y se mira la confirmación antes de rendirse
-              const P6 = window.__paquetes; if (P6 && P6.recogidas && rc0 != null && (P6.recogidas().ok[keyIt] || 0) > rc0) { ok = true; razon = 'juntado'; break; }
-              if (desdeP > 350 + 3 * 800 + 1500) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
-            }
+            // v0.100.11 (caja 79: parado EXACTO sobre el item, 5 veces rechazado con el item recién caído, y el que sí se levantó antes fue ~25 s después): casi seguro el item es del que mató al monstruo durante un rato.
+            // Antes se rendía a los ~4 s y se iba. Ahora se queda parado sobre la casilla y pide cada 300 ms (el cliente del juego pide ~3 por segundo) hasta LOOT.esperaMs (40 s); sale si lo levantó (confirmación del servidor),
+            // si se lo llevó otro (desaparece del piso), si la vida baja de 35 % o se acaba el tiempo.
+            const desdeP = Date.now() - llegoT, P6 = window.__paquetes;
+            if (P6.recogidas && rc0 != null && (P6.recogidas().ok[keyIt] || 0) > rc0) { ok = true; razon = 'juntado'; break; }
+            const vMax = M()._MuWebGetPlayerLifeMax ? M()._MuWebGetPlayerLifeMax() : 0;
+            if (vMax && M()._MuWebGetPlayerLife() < 0.35 * vMax) { razon = 'vida baja esperando (' + pqs + ' pedidos)'; break; }
+            if (desdeP > LOOT.esperaMs) { razon = 'llegó y pedí recogerlo ' + pqs + ' veces en ' + Math.round(desdeP / 1000) + ' s: el servidor no lo dio'; break; }
+            if (desdeP > 350 && Date.now() - ultPed >= 300) { const rr = P6.recoger(it.id); if (rr && rr.ok) { ultPed = Date.now(); pqs++; LOOT.pedidos++; } else if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } }
           } else if (LOOT.paquete && !LOOT.clic) { razon = 'no pedí recogerlo: paquetes.js viejo (falta F5 en la página del juego)'; break;      // caja 72: recargaron la extensión pero no la página
           } else {
             const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(LOOT.clic && S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
@@ -210,7 +212,7 @@
       try { Mo.viaje(false); } catch (e) { /* nada */ }
       LOOT.ocupado = false;
     }
-    if (ok) { LOOT.juntados++; LOOT.msViaje.push(Date.now() - t0); if (LOOT.msViaje.length > 100) LOOT.msViaje.shift(); } else if (razon === 'lo juntó otro') LOOT.otros++; else { LOOT.perdidos++; LOOT.ign.set(it.id, /no lo dio/.test(razon) ? Math.max(Date.now() + 5000, (it.t || Date.now()) + 30000) : Date.now() + 15000); }      // v0.100.6: si el servidor no lo dio (probable: todavía es de otro, que lo mató), se vuelve a intentar cuando el item tenga ~30 s en el piso (caja 76: rechazado a los 5-9 s, aceptado a los ~30 s)
+    if (ok) { LOOT.juntados++; LOOT.msViaje.push(Date.now() - t0); if (LOOT.msViaje.length > 100) LOOT.msViaje.shift(); } else if (razon === 'lo juntó otro') LOOT.otros++; else { LOOT.perdidos++; LOOT.ign.set(it.id, /no lo dio/.test(razon) ? Date.now() + 20000 : Date.now() + 15000); }      // v0.100.6: si el servidor no lo dio (probable: todavía es de otro, que lo mató), se vuelve a intentar cuando el item tenga ~30 s en el piso (caja 76: rechazado a los 5-9 s, aceptado a los ~30 s)
     LOOT.ult = razon + ' · ' + it.g + ':' + it.i + '+' + it.lv + ' en (' + it.x + ',' + it.y + ') · ' + (Date.now() - t0) + ' ms' + (volvio === false ? ' · NO pude volver al punto (' + msVuelta + ' ms)' : msVuelta ? ' · volví en ' + msVuelta + ' ms' : '');
     L('piso: ' + LOOT.ult);
   }
@@ -317,7 +319,7 @@
   }, 1000);
   window.__loot = {
     helperLeer, helperAgregar, helperAuto: (v) => { if (v != null) { HELP.auto = !!v; guardarHelp(); } return HELP.auto; }, helperEstado: () => ({ auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }),
-    on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; }, clic: () => LOOT.clic, setClic: (v) => { LOOT.clic = !!v; guardarLoot(); return LOOT.clic; }, paquete: () => LOOT.paquete, setPaquete: (v) => { LOOT.paquete = !!v; guardarLoot(); return LOOT.paquete; },
+    on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; }, clic: () => LOOT.clic, setClic: (v) => { LOOT.clic = !!v; guardarLoot(); return LOOT.clic; }, setEspera: (ms) => { LOOT.esperaMs = Math.max(2000, Math.min(120000, +ms || 40000)); return LOOT.esperaMs; }, paquete: () => LOOT.paquete, setPaquete: (v) => { LOOT.paquete = !!v; guardarLoot(); return LOOT.paquete; },
     firmas: () => LOOT.firmas.slice(), firmaTxt,
     marcarMasCercano: () => {      // agrega la firma del item del piso más cercano al héroe (para enseñarle cuál es la caja)
       const B = window.__bichos; if (!B || !B.suelo) return { ok: false, motivo: 'bichos.js no cargó' };
