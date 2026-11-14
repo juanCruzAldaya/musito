@@ -54,18 +54,24 @@
   // Como el largo varía, el corte entre items es una HEURÍSTICA: la casilla siguiente es un número mayor, seguido de una cabecera plausible. Las casillas 0-11 son el equipo puesto (0 arma, 1 escudo, 2 casco, 3 armadura, 4 pantalón, 5 guantes, 6 botas, 7 alas, 8 mascota, 9-10 anillos...).
   const inv = { visto: false, t_s: null, largo: 0, hex: '', items: [], confiable: null };
   const hex2 = (a) => Array.from(a, (b) => b.toString(16).padStart(2, '0')).join(' ');
-  // ---- AFIJOS DE RAREZA (v0.98.0): solo lectura, sacados de los bytes del item que manda el servidor ----
-  // Descifrado con las cajas 58-61 y capturas del tooltip: al final del item van 2 PARES de 2 bytes [id][tirada]; `00 00` = hueco vacío.
-  //  - id - 8 = número de línea (desde 0) de afijos_es.txt (confirmado con 10 afijos).
-  //  - tirada 0-255: define el valor; la rareza sale de la tirada (Común < ~127, Raro hasta ~203, Épico desde ~204: estimado, los límites exactos no están medidos).
-  // El catálogo de nombres (afijos_es.txt) NO está en git: lo lee puente.js del archivo local y me lo manda; sin el archivo se muestran solo los números.
+  // ---- AFIJOS DE RAREZA (v0.99.0): solo lectura, sacados de los bytes del item que manda el servidor ----
+  // Formato (confirmado con el código del cliente, función RenderItemRareAffixLines, y con 9 tooltips): al final del item van 2 PARES de 2 bytes [id][tirada]; `00 00` = hueco vacío.
+  //  - id = índice de la tabla de afijos del cliente (registro de 36 bytes: mínimo y máximo del valor, nombre y descripción en es/en/pt). Los afijos de skill/buff no tienen rango.
+  //  - rareza según la tirada (igual que el cliente): >252 Mítico, >241 Legendario, >203 Épico, el resto tirada>>7: 0 Común (0-127), 1 Raro (128-203). La del item es la del mejor afijo.
+  //  - valor = redondeo a 0.1 de mín + (máx − mín) × tirada / 255.
+  // Los nombres (afijos_es.txt, formato id|nombre|descripción) NO están en git: los lee puente.js del archivo local y me los manda; sin el archivo se ven igual los valores, pero con "afijo #id".
+  const RANGOS = {1:[5,25],2:[5,25],3:[5,25],4:[5,25],5:[3,15],6:[5,25],12:[2,10],13:[5,30],14:[5,30],15:[10,50],17:[1,5],19:[5,25],20:[5,20],26:[2,10],32:[3,10],33:[2,8],34:[3,12],35:[3,12],36:[3,12],37:[20,60],38:[20,60],39:[5,15],40:[5,15],41:[10,40],42:[10,40],43:[20,50],44:[3,8],46:[1,10],47:[0.5,5],48:[1,8],49:[2,15],50:[2,15],51:[0.5,5],52:[1,8],53:[2,12],54:[1,5],55:[2,15],56:[2,15],57:[1,8],58:[1,10],59:[1,10],60:[1,8],61:[1,8],62:[1,10],63:[1,10],64:[1,5],65:[0.5,4],66:[0.5,3],67:[0.5,3],68:[0.5,3],69:[2,10],70:[3,15],71:[1,5],72:[1,10],73:[1,10],74:[2,10],75:[2,10],76:[1,5],77:[1,5],78:[1,3],79:[0.5,3],80:[2,10],81:[1,8],82:[2,10],83:[1,5],84:[1,5],85:[2,10],86:[1,10],87:[3,20],88:[1,8],89:[1,6],90:[2,12],91:[1,8],92:[0.5,4],93:[1,8],94:[1,8],95:[1,8],96:[1,5],97:[0.5,4],98:[2,12],99:[0.5,3],100:[2,12],101:[1,5],102:[20,80],103:[5,30],104:[2,12],105:[2,10],106:[5,20],107:[1,5],108:[2,10],109:[5,30],110:[5,30],111:[3,15],112:[2,10],113:[1,8],114:[1,5],115:[1,5],116:[10,40],117:[5,25],118:[10,30],119:[5,20],120:[5,20],121:[5,20],122:[5,20],123:[5,20],124:[5,20],125:[2,10],126:[5,20],127:[5,25],128:[5,20],129:[10,40],130:[5,20],131:[5,20],132:[5,20],133:[10,40],134:[10,50],135:[5,20],136:[5,25],137:[5,30],138:[5,25],139:[5,20],140:[2,10],141:[10,40],142:[5,20],143:[5,20],144:[5,20],145:[50,100],146:[5,30],147:[5,25],148:[2,15],149:[5,30],150:[0.5,3],151:[5,30],152:[1,5],153:[5,25],154:[5,20],155:[2,10],156:[5,25],157:[1,5],158:[10,100],159:[5,30],160:[20,100],161:[1,5],162:[5,20],163:[1,3],164:[1,3],165:[5,30],166:[20,50],167:[10,30],168:[20,50],169:[20,60],170:[30,80],171:[10,40],172:[10,30],173:[10,30],174:[20,50],175:[30,60],176:[5,15],177:[20,50],178:[20,50],179:[10,30],180:[30,80],181:[10,50],182:[10,50],183:[10,50],184:[10,50],185:[10,50],186:[10,40],187:[10,40],188:[10,40],189:[10,40],190:[10,40],191:[5,20],192:[50,100],193:[5,20],194:[10,50],195:[5,20],199:[5,20],201:[20,60],202:[5,25],203:[1,5],204:[5,20]};
   let catalogo = null;
   window.addEventListener('message', (e) => {
-    if (e.source === window && e.data && typeof e.data.__muvigiaAfijos === 'string') catalogo = e.data.__muvigiaAfijos.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length);
+    if (e.source !== window || !e.data || typeof e.data.__muvigiaAfijos !== 'string') return;
+    const c = {};
+    for (const l of e.data.__muvigiaAfijos.split('\n')) { const p = l.replace(/\r$/, '').split('|'); if (p.length >= 3 && /^\d+$/.test(p[0])) c[+p[0]] = { n: p[1], d: p.slice(2).join('|') }; }
+    catalogo = c;
   });
   try { window.postMessage({ __muvigiaPide: true }, '*'); } catch (e) { /* nada */ }
-  const AFIJOS_VISTOS = { 129: 'Cazador de jefes — +{v}% daño vs jefes' };   // ids que faltan en afijos_es.txt, vistos en el tooltip del juego
-  const rarezaDeTirada = (t) => (t < 127 ? 'Común' : t < 204 ? 'Raro' : 'Épico');
+  const TIERS = ['Común', 'Raro', 'Épico', 'Legendario', 'Mítico'];
+  const tierDeTirada = (t) => (t > 252 ? 4 : t > 241 ? 3 : t > 203 ? 2 : t >> 7);
+  const valorDeAfijo = (id, t) => { const r = RANGOS[id]; if (!r) return null; const v = Math.round((r[0] + (r[1] - r[0]) * t / 255) * 10) / 10; return Math.abs(v - Math.round(v)) < 0.05 ? Math.round(v) : v; };
   function afijosDe(it) {
     if (!it || it.length < 11) return [];
     const g = it[0] >> 4; if (g > 11 && g !== 13) return [];
@@ -74,11 +80,12 @@
     return out;
   }
   function afijoTexto(a) {
-    const l = (catalogo && catalogo[a.id - 8]) || AFIJOS_VISTOS[a.id];
-    let nom = 'afijo #' + a.id + ' (desconocido)';
-    if (l) { const i = l.indexOf(' — '); const n = i < 0 ? l : l.slice(0, i), d = i < 0 ? '' : l.slice(i + 3); nom = (/^(grants the|the item gains)/.test(n) ? d : n + ' ' + d).replace('{v}', 'x').trim(); }
-    return nom + ' [' + rarezaDeTirada(a.tirada) + '≈, tirada ' + a.tirada + ']';
+    const c = catalogo && catalogo[a.id], v = valorDeAfijo(a.id, a.tirada);
+    let txt = c ? ((c.n ? c.n + ': ' : '') + c.d) : 'afijo #' + a.id;
+    txt = v === null ? txt : (/\{v\}/.test(txt) ? txt.replace('{v}', v) : txt + ' (' + v + ')');
+    return '[' + TIERS[tierDeTirada(a.tirada)] + '] ' + txt;
   }
+  const rarezaDeItem = (afs) => (afs && afs.length ? TIERS[Math.max(...afs.map((a) => tierDeTirada(a.tirada)))] : null);
   const cambios = [];   // últimos items que el servidor volvió a mandar (C3 24: mover / re-roll): casilla + item + afijos
   function leerCambio(m, u8) {
     if (!u8 || m.k !== 'C3:0x24' || u8.length < 16) return;
@@ -107,7 +114,7 @@
     inv.confiable = eq.length >= 6 && eq.every((x, i, a) => i === 0 || x.casilla > a[i - 1].casilla);
   }
   const nombreDeItem = (g, i) => { try { const M = window.Module, p = M && M._MuWebGetItemNameUtf8 ? M._MuWebGetItemNameUtf8(g, i) | 0 : 0; return p ? M.UTF8ToString(p) : ''; } catch (e) { return ''; } };
-  const itemTexto = (x) => x.casilla + ': ' + (nombreDeItem(x.grupo, x.indice) || (x.grupo + ':' + x.indice)) + ' +' + x.nivel + (x.afijos && x.afijos.length ? ' {' + x.afijos.map(afijoTexto).join(' / ') + '}' : '');
+  const itemTexto = (x) => x.casilla + ': ' + (nombreDeItem(x.grupo, x.indice) || (x.grupo + ':' + x.indice)) + ' +' + x.nivel + (x.afijos && x.afijos.length ? ' {Rareza ' + rarezaDeItem(x.afijos) + ': ' + x.afijos.map(afijoTexto).join(' / ') + '}' : '');
   const equipoTexto = () => (inv.visto
     ? inv.items.filter((x) => x.casilla <= 11).map(itemTexto).join(' · ') + (inv.confiable ? '' : ' (lectura dudosa)') + (catalogo ? '' : ' (sin afijos_es.txt: solo números)') + (cambios.length ? ' · ÚLTIMO CAMBIO: ' + itemTexto(cambios[cambios.length - 1]) : '')
     : 'todavía no vi la lista de inventario (recargá la página con F5 y entrá al juego)');
