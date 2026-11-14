@@ -175,7 +175,10 @@
             // v0.100.0 (pedido del usuario: "intentemos mandar el paquete"): el MISMO pedido que manda el cliente al clickear un item: C3 05 22 [id]. Hasta 3, uno cada 400 ms; "juntado" solo si el servidor lo confirma.
             const desdeP = Date.now() - llegoT;
             if (pqs < 3 && desdeP > 80 + pqs * 400) { const rr = window.__paquetes.recoger(it.id); pqs++; LOOT.pedidos++; if (!rr || !rr.ok) { if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } pqs--; } }
-            else if (pqs >= 3 && desdeP > 80 + 3 * 400 + 700) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
+            else if (pqs >= 3) {      // v0.100.6 (caja 76): el servidor SÍ lo dio una vez pero la confirmación llegó tarde y quedó como "no lo dio": se espera hasta 1,5 s y se mira la confirmación antes de rendirse
+              const P6 = window.__paquetes; if (P6 && P6.recogidas && rc0 != null && (P6.recogidas().ok[keyIt] || 0) > rc0) { ok = true; razon = 'juntado'; break; }
+              if (desdeP > 80 + 3 * 400 + 1500) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
+            }
           } else if (LOOT.paquete && !LOOT.clic) { razon = 'no pedí recogerlo: paquetes.js viejo (falta F5 en la página del juego)'; break;      // caja 72: recargaron la extensión pero no la página
           } else {
             const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(LOOT.clic && S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
@@ -201,7 +204,7 @@
       try { Mo.viaje(false); } catch (e) { /* nada */ }
       LOOT.ocupado = false;
     }
-    if (ok) { LOOT.juntados++; LOOT.msViaje.push(Date.now() - t0); if (LOOT.msViaje.length > 100) LOOT.msViaje.shift(); } else if (razon === 'lo juntó otro') LOOT.otros++; else { LOOT.perdidos++; LOOT.ign.set(it.id, Date.now() + 15000); }
+    if (ok) { LOOT.juntados++; LOOT.msViaje.push(Date.now() - t0); if (LOOT.msViaje.length > 100) LOOT.msViaje.shift(); } else if (razon === 'lo juntó otro') LOOT.otros++; else { LOOT.perdidos++; LOOT.ign.set(it.id, /no lo dio/.test(razon) ? Math.max(Date.now() + 5000, (it.t || Date.now()) + 30000) : Date.now() + 15000); }      // v0.100.6: si el servidor no lo dio (probable: todavía es de otro, que lo mató), se vuelve a intentar cuando el item tenga ~30 s en el piso (caja 76: rechazado a los 5-9 s, aceptado a los ~30 s)
     LOOT.ult = razon + ' · ' + it.g + ':' + it.i + '+' + it.lv + ' en (' + it.x + ',' + it.y + ') · ' + (Date.now() - t0) + ' ms' + (volvio === false ? ' · NO pude volver al punto (' + msVuelta + ' ms)' : msVuelta ? ' · volví en ' + msVuelta + ' ms' : '');
     L('piso: ' + LOOT.ult);
   }
