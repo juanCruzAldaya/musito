@@ -141,8 +141,8 @@
   const SOLO = [{ g: 10, i: 51, lv: null }];
   LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = [];
   const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (!(s.v >= 2)) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); if (!(s.v >= 7)) { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; } if (s.vGuantes) LOOT.vGuantes = true; } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 7, vGuantes: !!LOOT.vGuantes, on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (!(s.v >= 2)) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); if (!(s.v >= 7)) { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; } if (s.vGuantes) LOOT.vGuantes = true; if (s.vGuantes2) LOOT.vGuantes2 = true; if (Array.isArray(s.guantesJuego)) LOOT.guantesJuego = s.guantesJuego.slice(0, 120); } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 7, vGuantes: !!LOOT.vGuantes, vGuantes2: !!LOOT.vGuantes2, guantesJuego: LOOT.guantesJuego || [], on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const cacheNom = new Map();
@@ -276,19 +276,21 @@
   }
   // v0.100.3 (pedido: "agregá los guantes valorosos y los guantes divinos para lootear y chequear que funcione, salen con más cadencia"): no sé su grupo:índice en este servidor, así que al entrar al juego
   // se buscan por NOMBRE en la tabla del propio cliente (MuWebGetItemNameUtf8) y se agregan sus firmas (grupo 10 = guantes, cualquier nivel). Una sola vez (queda guardado); el resultado va al registro.
-  const BUSCAR_GUANTES = ['guantes valoros', 'guantes divin'];
+  // v0.100.5 (caja 74): "Guantes Divinos" salió (10:19 y 10:50) pero "Guantes Valoros…" no existe con ese nombre: se prueban variantes y se guarda la lista de TODOS los guantes del juego (loot.guantes_del_juego) para ver cómo se llaman.
+  const BUSCAR_GUANTES = ['guantes valoros', 'guantes valeros', 'guantes valien', 'guantes del valor', 'guantes de valor', 'guantes divin'];
   let guantesTick = 0;
   setInterval(() => {
     try {
-      if (LOOT.vGuantes) return; const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5) return; if (++guantesTick < 6) return;
+      if (LOOT.vGuantes2) return; const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5) return; if (++guantesTick < 6) return;
       const enc = [];
       for (const q of BUSCAR_GUANTES) { const r = window.__loot && window.__loot.buscarNombre ? window.__loot.buscarNombre(q) : null; if (r && r.ok) r.encontrados.filter((x) => x.g === 10).forEach((x) => { if (!enc.some((e) => e.i === x.i)) enc.push(x); }); }
       if (!enc.length && guantesTick < 40) return;      // los nombres todavía no se pueden leer: reintenta
-      LOOT.vGuantes = true;
+      LOOT.vGuantes = true; LOOT.vGuantes2 = true;
+      try { const t = window.__loot.buscarNombre('guantes'); if (t && t.ok) LOOT.guantesJuego = t.encontrados.filter((x) => x.g === 10).map((x) => x.g + ':' + x.i + ' ' + x.nombre); } catch (e) { /* nada */ }
       enc.forEach((x) => { if (!LOOT.firmas.some((f) => f.g === x.g && f.i === x.i)) LOOT.firmas.push({ g: x.g, i: x.i, lv: null }); });
       guardarLoot();
       L('piso: ' + (enc.length ? 'agregué a la lista ' + enc.map((x) => x.g + ':' + x.i + ' ' + x.nombre).join(', ') : 'NO encontré "Guantes Valorosos" ni "Guantes Divinos" en los nombres del juego (decime cómo aparecen en el piso)'));
-    } catch (e) { LOOT.vGuantes = true; }
+    } catch (e) { LOOT.vGuantes = true; LOOT.vGuantes2 = true; }
   }, 1000);
   const nombresPaewang = () => PAEWANG.map((p) => nombreItem(p.g, p.i)).filter(Boolean);
   // una sola vez por carga, con el personaje en el juego y vivo (ApplyConfig recarga la configuración del Helper): pone los nombres del set Real
@@ -324,7 +326,7 @@
     agregarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; if (!LOOT.nombres.includes(q)) LOOT.nombres.push(q); guardarLoot(); let h = null; try { const r = window.__loot.buscarNombre(texto); if (r.ok && r.encontrados.length && r.encontrados.length <= 40) h = helperAgregar([...new Set(r.encontrados.map((x) => x.nombre))], true); } catch (e) { /* nada */ } return { ok: true, nombres: LOOT.nombres.slice(), helper: h }; },
     quitarNombres: () => { LOOT.nombres = []; guardarLoot(); return true; },
     cerca: () => { const B = window.__bichos, h = heroJ(); return B && B.suelo ? B.suelo().filter((x) => chebJ(x, h) <= 15).sort((p, q) => chebJ(p, h) - chebJ(q, h)).slice(0, 12).map((x) => (x.g === undefined ? '?' : x.g + ':' + x.i + ' niv ' + x.lv) + ' a ' + chebJ(x, h)) : []; },
-    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), helper_nombres: (() => { try { return { auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }; } catch (e) { return null; } })(), radio: LOOT.radio, objetivos: LOOT.objetivos, vueltas: LOOT.vueltas, no_volvio: LOOT.noVolvio, por_paquete: LOOT.paquete, pedidos_propios: LOOT.pedidos, clics: LOOT.clics, clic_acierto_punto: LOOT.offOk, clic_puntos: LOOT.offStats, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
+    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), helper_nombres: (() => { try { return { auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }; } catch (e) { return null; } })(), radio: LOOT.radio, guantes_del_juego: LOOT.guantesJuego || null, objetivos: LOOT.objetivos, vueltas: LOOT.vueltas, no_volvio: LOOT.noVolvio, por_paquete: LOOT.paquete, pedidos_propios: LOOT.pedidos, clics: LOOT.clics, clic_acierto_punto: LOOT.offOk, clic_puntos: LOOT.offStats, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
       firmas_vistas: [...LOOT.vistos].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => k + ' x' + n) }),
   };
   window.__joyas = {
