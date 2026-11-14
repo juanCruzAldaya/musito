@@ -165,7 +165,12 @@
           razon = ok ? 'juntado' : 'lo juntó otro'; break;
         }
         if (M()._MuWebGetPlayerLife() <= 0) { razon = 'murió'; break; }
-        const r = Mv.paso(it.x, it.y, 0);
+        // v0.100.9 (pedido: "va caminando y nunca se para al lado para agarrar; en MU hay que pararse al lado, apretar y después volver a caminar"): al llegar se FRENA (sin seguir mandando pasos), se espera
+        // ~350 ms a que el servidor tenga la posición nueva y recién ahí se pide recoger (hasta 3, uno cada 800 ms). Si algo lo corre a más de 1 casilla, vuelve a caminar hasta el item.
+        let r;
+        if (llegoT) { if (chebJ(heroJ(), it) > 1) { llegoT = 0; pqs = 0; r = Mv.paso(it.x, it.y, 0); } else r = 'llegó'; }
+        else r = Mv.paso(it.x, it.y, 0);
+        if (r === 'llegó' && !llegoT) { llegoT = Date.now(); try { Mv.parar(); } catch (e) { /* nada */ } try { M()._MuWebCancelHeroWalk && M()._MuWebCancelHeroWalk(); } catch (e) { /* nada */ } }
         if (r === 'sin calibrar' || r === 'sin dirección') { razon = r; break; }
         if (r === 'llegó') {
           // v0.99.5: pasar por encima SOLO levanta joyas; las demás hay que clickearlas. v0.99.7 (caja 67): 10 clics sobre la casilla del piso y NINGÚN pedido de recoger: el clic no le pega al item. En el MU el item se elige con el puntero sobre su
@@ -174,10 +179,10 @@
           else if (LOOT.paquete && window.__paquetes && window.__paquetes.recoger) {
             // v0.100.0 (pedido del usuario: "intentemos mandar el paquete"): el MISMO pedido que manda el cliente al clickear un item: C3 05 22 [id]. Hasta 3, uno cada 400 ms; "juntado" solo si el servidor lo confirma.
             const desdeP = Date.now() - llegoT;
-            if (pqs < 3 && desdeP > 80 + pqs * 400) { const rr = window.__paquetes.recoger(it.id); pqs++; LOOT.pedidos++; if (!rr || !rr.ok) { if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } pqs--; } }
+            if (pqs < 3 && desdeP > 350 + pqs * 800) { const rr = window.__paquetes.recoger(it.id); pqs++; LOOT.pedidos++; if (!rr || !rr.ok) { if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } pqs--; } }
             else if (pqs >= 3) {      // v0.100.6 (caja 76): el servidor SÍ lo dio una vez pero la confirmación llegó tarde y quedó como "no lo dio": se espera hasta 1,5 s y se mira la confirmación antes de rendirse
               const P6 = window.__paquetes; if (P6 && P6.recogidas && rc0 != null && (P6.recogidas().ok[keyIt] || 0) > rc0) { ok = true; razon = 'juntado'; break; }
-              if (desdeP > 80 + 3 * 400 + 1500) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
+              if (desdeP > 350 + 3 * 800 + 1500) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
             }
           } else if (LOOT.paquete && !LOOT.clic) { razon = 'no pedí recogerlo: paquetes.js viejo (falta F5 en la página del juego)'; break;      // caja 72: recargaron la extensión pero no la página
           } else {
