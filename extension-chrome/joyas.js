@@ -258,7 +258,10 @@
       if (HELP.listo || !HELP.auto) return; const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5 || !(m._MuWebGetPlayerLife() > 0)) { helperTick = 0; return; }
       if (++helperTick < 8) return;      // ~8 s dentro del juego
       const nm = nombresPaewang(); if (nm.length < PAEWANG.length) { if (helperTick > 40) HELP.listo = true; return; }      // los nombres todavía no se pueden leer
-      HELP.listo = true; helperAgregar(nm, true);
+      // v0.99.8: leyendo el código del cliente, SetPickupNamesUtf8 solo aplica la lista si YA existe el objeto de la ventana del Helper (global 9019656); si no, no hace nada y devuelve -1. Hipótesis: ese objeto se crea recién cuando abrís la ventana del Helper (botón HELPER de arriba a la derecha).
+      // Por eso se reintenta cada ~20 s (hasta 30 veces) hasta que el juego deje la lista aplicada. Sin verificar en el juego.
+      if (helperTick % 20 !== 0 && HELP.intentos > 0) return;
+      const rr = helperAgregar(nm, true); const lista = helperLeer(); if ((rr && rr.ok && !rr.devolvio) || (lista.ok && lista.nombres && nm.every((n) => lista.nombres.some((x) => normN(x) === normN(n))))) HELP.listo = true; else if (HELP.intentos >= 30) HELP.listo = true;
     } catch (e) { HELP.listo = true; HELP.ult = 'error: ' + String(e && e.message || e).slice(0, 80); }
   }, 1000);
   window.__loot = {
