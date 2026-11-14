@@ -173,6 +173,7 @@
             const desdeP = Date.now() - llegoT;
             if (pqs < 3 && desdeP > 80 + pqs * 400) { const rr = window.__paquetes.recoger(it.id); pqs++; LOOT.pedidos++; if (!rr || !rr.ok) { if (!(rr && rr.motivo === 'muy seguido')) { razon = 'no pude mandar el pedido (' + ((rr && rr.motivo) || '?') + ')'; break; } pqs--; } }
             else if (pqs >= 3 && desdeP > 80 + 3 * 400 + 700) { razon = 'llegó y pedí recogerlo 3 veces: el servidor no lo dio'; break; }
+          } else if (LOOT.paquete && !LOOT.clic) { razon = 'no pedí recogerlo: paquetes.js viejo (falta F5 en la página del juego)'; break;      // caja 72: recargaron la extensión pero no la página
           } else {
             const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(LOOT.clic && S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
             const pidios = () => (P3 && P3.pedidosDe ? P3.pedidosDe(it.id) : 0);
