@@ -133,10 +133,12 @@
   // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
   const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }];      // las botas (11:51) YA las tiene: se excluyeron a pedido (v0.92.0)
   const EXCLUIDOS = [{ g: 11, i: 51 }];
-  LOOT.firmas = LOOT.firmas.concat(PAEWANG); LOOT.nombres = [];
+  // v0.99.2 (pedido: "las box of kundun quiero levantar"): TODAS las Box of Kundun, no solo la +5. En el MU estándar son 14:11 con nivel 8 a 12 (+1 a +5). La +5 (nivel 12) ya está confirmada: son las 42 que el usuario tiene en la mochila (caja 63). Los niveles 8 a 11 son los estándar, sin verificar en este servidor.
+  const KUNDUN = [8, 9, 10, 11].map((lv) => ({ g: 14, i: 11, lv }));
+  LOOT.firmas = LOOT.firmas.concat(PAEWANG, KUNDUN); LOOT.nombres = [];
   const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 2, on: LOOT.on, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 3, on: LOOT.on, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const cacheNom = new Map();
@@ -253,7 +255,7 @@
       guardarLoot();
       return { ok: true, firma: firmaTxt(f), a: chebJ(it, h) };
     },
-    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }].concat(PAEWANG); LOOT.nombres = []; guardarLoot(); return LOOT.firmas.slice(); },
+    reiniciar: () => { LOOT.firmas = [{ g: 14, i: 11, lv: 12 }].concat(KUNDUN, PAEWANG); LOOT.nombres = []; guardarLoot(); return LOOT.firmas.slice(); },
     nombreItem,
     // busca en TODOS los items del juego los que tengan ese texto en el nombre (idioma del cliente): { ok, encontrados: ['10:51 Guantes ...'] }
     buscarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; const m = M(); if (!m || !m._MuWebGetItemNameUtf8) return { ok: false, motivo: 'el juego no tiene la consulta de nombres' }; const out = []; for (let g = 0; g <= 15; g++) for (let i = 0; i <= 511; i++) { const n = nombreItem(g, i); if (n && normN(n).includes(q)) out.push({ g, i, nombre: n }); if (out.length > 200) break; } return { ok: true, encontrados: out }; },
