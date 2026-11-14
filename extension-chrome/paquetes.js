@@ -163,7 +163,7 @@
     else if (u8.length >= 8) { const k = (u8[4] >> 4) + ':' + u8[5] + ':' + u8[6]; recogidas.ok[k] = (recogidas.ok[k] || 0) + 1; recogidas.ultimos.push({ t_s: t, res: 'ok ' + k, casilla: r }); }
     if (recogidas.ultimos.length > 25) recogidas.ultimos.shift();
   }
-  const recogidasInforme = () => ({ pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, por_item: recogidas.por_item, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
+  const recogidasInforme = () => ({ propios: recogidas.propios || 0, pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, por_item: recogidas.por_item, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
@@ -183,6 +183,18 @@
   const aU8 = (d) => (d instanceof ArrayBuffer ? new Uint8Array(d) : ArrayBuffer.isView(d) ? new Uint8Array(d.buffer, d.byteOffset, d.byteLength) : null);
 
   // Cada hechizo enviado (C3 0x19: hechizo(2) + blanco(2)): qué bicho eligió y a qué distancia estaba. Sirve para ver cómo ataca el Helper.
+  // v0.100.0 (pedido explícito del usuario, cambia la regla "sin forjar paquetes" SOLO para esto): pedir recoger un item del piso con el MISMO paquete que manda el cliente al clickearlo o el Helper del juego: C3 05 22 [id alto] [id bajo].
+  // Se manda por el mismo socket y con el mismo tipo de dato que usa el juego. El servidor valida (distancia, dueño, lugar en la mochila). Máximo 1 cada 150 ms.
+  let juego = null, ultPropio = 0;
+  function recoger(id) {
+    if (!juego || !juego.s || juego.s.readyState !== 1) return { ok: false, motivo: 'todavía no vi el socket del juego' };
+    if (typeof id !== 'number' || id < 0 || id > 0x7FFF) return { ok: false, motivo: 'id inválido' };
+    if (Date.now() - ultPropio < 150) return { ok: false, motivo: 'muy seguido' };
+    ultPropio = Date.now(); recogidas.propios = (recogidas.propios || 0) + 1;
+    const u = new Uint8Array([0xC3, 0x05, 0x22, (id >> 8) & 0xFF, id & 0xFF]);
+    juego.s.send(juego.ab ? u.buffer : u);
+    return { ok: true };
+  }
   const castsTx = [];
   function logTx(u) {
     if (!u || u.length < 7 || u[0] !== 0xC3 || u[2] !== 0x19) return;
@@ -205,7 +217,7 @@
         } catch (err) { /* nada */ }
       });
       const send = s.send.bind(s);
-      s.send = (d) => { try { const u = aU8(d); anotar(tx, meta(u), 'tx'); logTx(u); try { guardarEnviado(meta(u), u); recogidaTx(meta(u), u); } catch (e3) { /* nada */ } for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
+      s.send = (d) => { try { const u = aU8(d); if (u && u.length >= 3 && (u[0] === 0xC1 || u[0] === 0xC3)) juego = { s, ab: d instanceof ArrayBuffer }; anotar(tx, meta(u), 'tx'); logTx(u); try { guardarEnviado(meta(u), u); recogidaTx(meta(u), u); } catch (e3) { /* nada */ } for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
       return s;
     };
     P.prototype = WS.prototype;
@@ -223,6 +235,7 @@
     enviadosRecientes: () => enviadosRecientes,
     recogidas: () => recogidasInforme(),
     pedidosDe: (id) => recogidas.intentos_por_id[id] || 0,
+    recoger,
     informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, enviados_recientes: enviadosRecientes, recogidas: recogidasInforme(), hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();
