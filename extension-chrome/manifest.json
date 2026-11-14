@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MuMagdalenas Vigía",
-  "version": "0.99.9",
+  "version": "0.99.10",
   "description": "Panel de estado, avisos a Discord y vigía del Helper nativo para MU Magdalenas.",
   "permissions": [
     "storage",

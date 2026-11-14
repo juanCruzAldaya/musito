@@ -129,7 +129,7 @@
   // El cliente ya junta solo lo que cae cerca (~1 pedido/s). Esto va a buscar, sin forjar paquetes, SOLO los items con la firma elegida: camina hasta la casilla del item (pasar por encima lo levanta),
   // sin pulsos mientras camina, y la correa del modo lo trae de vuelta al ancla. Firma = grupo:índice y nivel que trae el aviso de item caído (C2 0x20: byte0>>4 = grupo, byte1 = índice, byte2 = nivel).
   // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
-  const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, clics: 0, offOk: null, offStats: {}, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
+  const LOOT = { on: false, clic: false, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, clics: 0, offOk: null, offStats: {}, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
   // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
   const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }];      // las botas (11:51) YA las tiene: se excluyeron a pedido (v0.92.0)
   const EXCLUIDOS = [{ g: 11, i: 51 }];
@@ -139,8 +139,8 @@
   const PRUEBA = [{ g: 13, i: 16, lv: 8 }, { g: 13, i: 17, lv: 8 }];
   LOOT.firmas = LOOT.firmas.concat(PAEWANG, KUNDUN, PRUEBA); LOOT.nombres = [];
   const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 4, on: LOOT.on, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (s.v !== 2) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 5, on: LOOT.on, clic: LOOT.clic, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const cacheNom = new Map();
@@ -169,12 +169,12 @@
           // NOMBRE (la etiqueta flota por encima de la casilla) o su modelo, así que se prueban puntos más arriba (como hace atacar() con los bichos) y se mira si el CLIENTE manda el pedido de recoger (tx C3 22 con el id del item): ese es el acierto y se recuerda el punto.
           if (!llegoT) llegoT = Date.now();
           else {
-            const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
+            const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(LOOT.clic && S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
             const pidios = () => (P3 && P3.pedidosDe ? P3.pedidosDe(it.id) : 0);
             if (puedeClic && !pidio && clics < lista.length && desde > 250 + clics * 380) {
               const px = S.pixelDe(it.x, it.y, 0), o = lista[clics++];
               if (px && S.enPantalla(px)) { LOOT.clics++; const e = LOOT.offStats[o.join(',')] = LOOT.offStats[o.join(',')] || { clics: 0, pedidos: 0 }; e.clics++; ult = { o, p0: pidios() }; await S.clic(px.x + o[0], px.y + o[1], 90); }
-            } else if (desde > (puedeClic ? 250 + lista.length * 380 + 600 : 900) || (pidio && desde > 3000)) { razon = 'llegó pero no lo levantó' + (puedeClic ? ' (tras ' + clics + ' clics' + (pidio ? ', el cliente SÍ pidió recogerlo: el servidor lo rechazó o tardó' : ', el cliente nunca pidió recogerlo: el clic no le pegó') + ')' : ' (sin clic: ' + (document.hasFocus() ? 'sin calibrar' : 'el navegador no tiene el foco') + ')'); break; }
+            } else if (desde > (puedeClic ? 250 + lista.length * 380 + 600 : 900) || (pidio && desde > 3000)) { razon = 'llegó pero no lo levantó' + (puedeClic ? ' (tras ' + clics + ' clics' + (pidio ? ', el cliente SÍ pidió recogerlo: el servidor lo rechazó o tardó' : ', el cliente nunca pidió recogerlo: el clic no le pegó') + ')' : ' (sin clic: ' + (!LOOT.clic ? 'clic apagado' : document.hasFocus() ? 'sin calibrar' : 'el navegador no tiene el foco') + ')'); break; }
           }
         }
         await new Promise((res) => setTimeout(res, 60));
@@ -268,12 +268,12 @@
       // v0.99.8: leyendo el código del cliente, SetPickupNamesUtf8 solo aplica la lista si YA existe el objeto de la ventana del Helper (global 9019656); si no, no hace nada y devuelve -1. Hipótesis: ese objeto se crea recién cuando abrís la ventana del Helper (botón HELPER de arriba a la derecha).
       // Por eso se reintenta cada ~20 s (hasta 30 veces) hasta que el juego deje la lista aplicada. Sin verificar en el juego.
       if (helperTick % 20 !== 0 && HELP.intentos > 0) return;
-      const rr = helperAgregar(nm, true); const lista = helperLeer(); if ((rr && rr.ok && !rr.devolvio) || (lista.ok && lista.nombres && nm.every((n) => lista.nombres.some((x) => normN(x) === normN(n))))) HELP.listo = true; else if (HELP.intentos >= 30) HELP.listo = true;
+      const rr = helperAgregar(nm, true); const lista = helperLeer(); if ((rr && rr.ok && !rr.devolvio) || (lista.ok && lista.nombres && nm.every((n) => lista.nombres.some((x) => normN(x) === normN(n))))) HELP.listo = true; else if (HELP.intentos >= 2) HELP.listo = true;
     } catch (e) { HELP.listo = true; HELP.ult = 'error: ' + String(e && e.message || e).slice(0, 80); }
   }, 1000);
   window.__loot = {
     helperLeer, helperAgregar, helperAuto: (v) => { if (v != null) { HELP.auto = !!v; guardarHelp(); } return HELP.auto; }, helperEstado: () => ({ auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }),
-    on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; },
+    on: () => LOOT.on, setOn: (v) => { LOOT.on = !!v; guardarLoot(); return LOOT.on; }, clic: () => LOOT.clic, setClic: (v) => { LOOT.clic = !!v; guardarLoot(); return LOOT.clic; },
     firmas: () => LOOT.firmas.slice(), firmaTxt,
     marcarMasCercano: () => {      // agrega la firma del item del piso más cercano al héroe (para enseñarle cuál es la caja)
       const B = window.__bichos; if (!B || !B.suelo) return { ok: false, motivo: 'bichos.js no cargó' };
