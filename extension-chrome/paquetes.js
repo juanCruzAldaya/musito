@@ -135,12 +135,30 @@
     enviadosRecientes.push({ t_s: Math.round((Date.now() - t0) / 1000), paquete: m.k, largo: u8.length, hex: hex2(u8.slice(0, 200)), pila });
     if (enviadosRecientes.length > 40) enviadosRecientes.shift();
   }
+  // ---- RECOGIDAS (v0.99.3): qué pasa cuando el cliente pide levantar un item del piso (tx C3 22 [id 2 bytes]) y qué contesta el servidor (rx C3 22: FF = no lo dio, FE = zen, otro = casilla + item) ----
+  // Para saber si "lo intenta levantar pero no lo levanta" es que el servidor lo rechaza (y cuántas veces, de qué item) o que ni siquiera lo pide.
+  const recogidas = { pedidos: 0, ok: {}, zen: 0, rechazos: 0, intentos_por_id: {}, ultimos: [] };
+  let ultimoPedido = null;
+  function recogidaTx(m, u8) {
+    if (m.k !== 'C3:0x22' || !u8 || u8.length < 5) return;
+    const id = (u8[3] << 8) | u8[4]; recogidas.pedidos++; ultimoPedido = id;
+    recogidas.intentos_por_id[id] = (recogidas.intentos_por_id[id] || 0) + 1;
+  }
+  function recogidaRx(m, u8) {
+    if (m.k !== 'C3:0x22' || !u8 || u8.length < 4) return;
+    const r = u8[3], t = Math.round((Date.now() - t0) / 1000);
+    if (r === 0xff) { recogidas.rechazos++; recogidas.ultimos.push({ t_s: t, res: 'rechazo', id_pedido: ultimoPedido }); }
+    else if (r === 0xfe) recogidas.zen++;
+    else if (u8.length >= 8) { const k = (u8[4] >> 4) + ':' + u8[5] + ':' + u8[6]; recogidas.ok[k] = (recogidas.ok[k] || 0) + 1; recogidas.ultimos.push({ t_s: t, res: 'ok ' + k, casilla: r }); }
+    if (recogidas.ultimos.length > 25) recogidas.ultimos.shift();
+  }
+  const recogidasInforme = () => ({ pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
     if (dir === 'rx' && u8) for (const f of escRx) { try { f(u8); } catch (e) { /* nada */ } }
     if (dir === 'rx' && u8) guardarMuestra(m, u8);
-    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } try { leerInventario(m, u8); } catch (e) { /* nada */ } try { leerCambio(m, u8); } catch (e) { /* nada */ } try { guardarReciente(m, u8); } catch (e) { /* nada */ } }
+    if (dir === 'rx' && u8) { try { sniffRareza(m, u8); } catch (e) { /* nada */ } try { leerInventario(m, u8); } catch (e) { /* nada */ } try { leerCambio(m, u8); } catch (e) { /* nada */ } try { recogidaRx(m, u8); } catch (e) { /* nada */ } try { guardarReciente(m, u8); } catch (e) { /* nada */ } }
     const c = tabla[m.k] || (tabla[m.k] = { n: 0, min: 1e9, max: 0, suma: 0 });
     c.n++; c.min = Math.min(c.min, m.len); c.max = Math.max(c.max, m.len); c.suma += m.len;
     total[dir]++;
@@ -176,7 +194,7 @@
         } catch (err) { /* nada */ }
       });
       const send = s.send.bind(s);
-      s.send = (d) => { try { const u = aU8(d); anotar(tx, meta(u), 'tx'); logTx(u); try { guardarEnviado(meta(u), u); } catch (e3) { /* nada */ } for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
+      s.send = (d) => { try { const u = aU8(d); anotar(tx, meta(u), 'tx'); logTx(u); try { guardarEnviado(meta(u), u); recogidaTx(meta(u), u); } catch (e3) { /* nada */ } for (const f of escTx) { try { f(u); } catch (e2) { /* nada */ } } } catch (err) { /* nada */ } return send(d); };
       return s;
     };
     P.prototype = WS.prototype;
@@ -192,6 +210,7 @@
     equipo: () => equipoTexto(),
     inventario: () => ({ ...inv, catalogo_cargado: !!catalogo, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice), afijos_txt: (x.afijos || []).map(afijoTexto) })), cambios: cambios.map((c) => ({ ...c, nombre: nombreDeItem(c.grupo, c.indice), afijos_txt: c.afijos.map(afijoTexto) })) }),
     enviadosRecientes: () => enviadosRecientes,
-    informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, enviados_recientes: enviadosRecientes, hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
+    recogidas: () => recogidasInforme(),
+    informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, enviados_recientes: enviadosRecientes, recogidas: recogidasInforme(), hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();

@@ -146,7 +146,7 @@
       bichos_ahora: B && B.ahora ? B.ahora() : null,
       inventario_leido: window.__paquetes && window.__paquetes.inventario ? window.__paquetes.inventario() : null,
       recursos_pagina: (() => { try { return performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /\.(js|json|wasm|data|bin|txt|dat|csv|xml|lang|pck|mjs)(\?|#|$)/i.test(n)).slice(0, 80); } catch (e) { return null; } })(),
-      paquetes: P && P.informe ? (() => { const i = P.informe(); return { rareza_sniff: i.rareza_sniff || null, recientes_raros: i.recientes_raros || null, enviados_recientes: i.enviados_recientes || null, segundos: i.segundos, total: i.total, recibidos: i.recibidos.slice(0, 25), enviados: i.enviados.slice(0, 15), muestras: i.muestras, casts_tx: i.castsTx, enviados_por_10s: i.porVentanaDe10sEnviados, recibidos_por_10s: i.porVentanaDe10s }; })() : null,
+      paquetes: P && P.informe ? (() => { const i = P.informe(); return { rareza_sniff: i.rareza_sniff || null, recientes_raros: i.recientes_raros || null, enviados_recientes: i.enviados_recientes || null, recogidas: i.recogidas || null, segundos: i.segundos, total: i.total, recibidos: i.recibidos.slice(0, 25), enviados: i.enviados.slice(0, 15), muestras: i.muestras, casts_tx: i.castsTx, enviados_por_10s: i.porVentanaDe10sEnviados, recibidos_por_10s: i.porVentanaDe10s }; })() : null,
     };
   }
   function bajar() {
