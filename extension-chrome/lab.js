@@ -38,15 +38,32 @@
     buf: !!(G() && G().buff && G().buff.on()),
     bfv: !!(G() && G().buffVida && G().buffVida.on()),
   });
+  // v0.100.7 (pedido: "en el tablero lab un % de tiempo por reset y resets por hora; la velocidad ya es rápida para niveles por hora"): se detecta cada reset (el nivel cae de golpe) y se guardan
+  // las horas de los últimos 40 (sobreviven a recargar). Se muestra: avance del reset actual (nivel / 400), tiempo medio por reset (últimos 5) y resets por hora.
+  const NIVEL_RESET = 400, KEY_RES = 'muResetsV1';
+  let resets = []; try { const r = JSON.parse(localStorage.getItem(KEY_RES) || '[]'); if (Array.isArray(r)) resets = r.filter((x) => typeof x === 'number').slice(-40); } catch (e) { resets = []; }
+  let lvPrev = null;
+  const mmss = (ms) => { const s = Math.round(ms / 1000), m = Math.floor(s / 60); return m >= 60 ? Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') : m + ':' + String(s % 60).padStart(2, '0'); };
+  const statsReset = () => {
+    const ult = resets.slice(-6), dif = []; for (let i = 1; i < ult.length; i++) { const d = ult[i] - ult[i - 1]; if (d > 20000 && d < 4 * 3600000) dif.push(d); }
+    const medio = dif.length ? dif.reduce((a, b) => a + b, 0) / dif.length : null;
+    const enHora = resets.filter((t) => Date.now() - t < 3600000).length;
+    return { medio, porHora: medio ? 3600000 / medio : null, enHora, desde: resets.length ? Date.now() - resets[resets.length - 1] : null };
+  };
+  window.__resets = { lista: () => resets.slice(), stats: statsReset, borrar: () => { resets = []; try { localStorage.removeItem(KEY_RES); } catch (e) { /* nada */ } } };
   setInterval(() => {
     if (!caja) return;
     try {
       const lv = call('GetPlayerLevel'), pm = call('GetExperiencePermille');
+      if (typeof lv === 'number' && lv > 0) { if (lvPrev != null && lvPrev >= 200 && lv <= lvPrev - 100) { resets.push(Date.now()); resets = resets.slice(-40); try { localStorage.setItem(KEY_RES, JSON.stringify(resets)); } catch (e) { /* nada */ } } lvPrev = lv; }
       const n = caja.querySelector('#lab-nivel'), br = caja.querySelector('#lab-barra');
       if (n && typeof lv === 'number' && typeof pm === 'number') {
         const Mo = window.__modo, nph = Mo && Mo.nivelesPorHora ? Mo.nivelesPorHora() : null, spn = Mo && Mo.segPorNivel ? Mo.segPorNivel() : null, mpm = Mo && Mo.muertesPorMin ? Mo.muertesPorMin() : null;
         const ml = lv >= 400 ? (Mo && Mo.nivelMaster ? Mo.nivelMaster() : call('GetMasterLevel')) : null;
-        n.textContent = 'Nv ' + lv + (ml ? ' · M' + ml : '') + (pm < 999 ? ' · ' + (pm / 10).toFixed(1) + ' %' : '') + (nph != null && nph > 0 ? ' · ' + nph + (ml ? ' master/h' : ' niv/h') + (spn ? ' (' + spn + ' s)' : '') : '') + (mpm != null ? ' · ' + mpm + ' mat/min' : '');
+        const sr = statsReset(), avance = Math.min(100, Math.round((lv / NIVEL_RESET) * 100));
+        const txtRes = ' · reset ' + avance + ' %' + (sr.medio ? ' · ' + mmss(sr.medio) + '/reset · ' + sr.porHora.toFixed(1) + ' res/h' : sr.desde != null ? ' · último hace ' + mmss(sr.desde) : '');
+        n.textContent = 'Nv ' + lv + (ml ? ' · M' + ml : '') + (pm < 999 ? ' · ' + (pm / 10).toFixed(1) + ' %' : '') + txtRes + (mpm != null ? ' · ' + mpm + ' mat/min' : '');
+        n.title = (nph != null && nph > 0 ? nph + (ml ? ' master/h' : ' niv/h') + (spn ? ' (' + spn + ' s por nivel)' : '') + ' · ' : '') + 'resets en la última hora: ' + sr.enHora + (sr.medio ? ' · tiempo medio por reset (últimos 5): ' + mmss(sr.medio) : ' · todavía no vi 2 resets seguidos');
         if (br) br.style.width = Math.max(0, Math.min(100, pm / 10)) + '%';
       }
       const v = document.getElementById('vigia-panel'); if (v) v.style.bottom = (60 + SUBE) + 'px';
