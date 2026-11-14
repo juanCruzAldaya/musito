@@ -218,6 +218,10 @@
       let leido = ''; try { leido = m.UTF8ToString(ptr); } catch (e) { /* nada */ }
       diag = ' [ptr ' + ptr + ', el juego lee ' + JSON.stringify(leido).slice(0, 50) + ']';
       r = llamar(ptr);
+      if (r === -1 || r == null) {      // v0.99.1: en el código del cliente (SetPickupNamesUtf8) el -1 sale SOLO si el puntero es nulo o strlen(texto) > 2048. El puntero no es nulo, así que sospecho que muAllocateUtf8 no deja el 0 final y strlen se pasa. 2º intento: texto + varios NUL.
+        try { diag += ' · muAllocateUtf8 = ' + String(window.muAllocateUtf8).replace(/\s+/g, ' ').slice(0, 260); } catch (e) { /* nada */ }
+        let p3 = 0; try { p3 = window.muAllocateUtf8(texto + '\0\0\0\0\0\0\0\0'); r = llamar(p3); diag += ' · 2º intento con NUL final (' + p3 + ') → ' + r; } catch (e) { diag += ' · el intento con NUL falló'; } finally { try { if (p3) m._free(p3); } catch (e) { /* nada */ } }
+      }
       if (r === -1 || r == null) {      // caja 45: devolvió -1 (puntero nulo o texto > 2048 bytes): 2º intento reservando yo la memoria con malloc, con el 0 final
         let p2 = 0;
         try { const bytes = new TextEncoder().encode(texto); p2 = m._malloc ? m._malloc(bytes.length + 1) : 0; if (p2 && m.HEAPU8) { m.HEAPU8.set(bytes, p2); m.HEAPU8[p2 + bytes.length] = 0; r = llamar(p2); diag += ' · 2º intento con malloc (' + p2 + ') → ' + r; } else diag += ' · sin malloc/HEAPU8'; } catch (e) { diag += ' · el 2º intento falló'; } finally { try { if (p2) m._free(p2); } catch (e) { /* nada */ } }
