@@ -154,11 +154,11 @@
   const OFFS_CLIC = [[0, -22], [0, -36], [0, -8], [0, -50], [-28, -22], [28, -22], [0, 8], [-56, -22], [56, -22], [0, -64], [-28, -42], [28, -42]];
   async function juntar(it) {
     LOOT.ocupado = true; LOOT.objetivos++;
-    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0, ult = null, pidio = false, pqs = 0, ajustes = 0, ultPed = 0; const chk = () => { const P4 = window.__paquetes; if (ult && !pidio && P4 && P4.pedidosDe && P4.pedidosDe(it.id) > ult.p0) { pidio = true; const e = LOOT.offStats[ult.o.join(',')] = LOOT.offStats[ult.o.join(',')] || { clics: 0, pedidos: 0 }; e.pedidos++; LOOT.offOk = ult.o; } }; const lista = LOOT.offOk ? [LOOT.offOk].concat(OFFS_CLIC.filter((x) => x.join(',') !== LOOT.offOk.join(','))) : OFFS_CLIC; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
+    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0, ult = null, pidio = false, pqs = 0, ajustes = 0, ultPed = 0, cercaT = 0; const chk = () => { const P4 = window.__paquetes; if (ult && !pidio && P4 && P4.pedidosDe && P4.pedidosDe(it.id) > ult.p0) { pidio = true; const e = LOOT.offStats[ult.o.join(',')] = LOOT.offStats[ult.o.join(',')] || { clics: 0, pedidos: 0 }; e.pedidos++; LOOT.offOk = ult.o; } }; const lista = LOOT.offOk ? [LOOT.offOk].concat(OFFS_CLIC.filter((x) => x.join(',') !== LOOT.offOk.join(','))) : OFFS_CLIC; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
     let dest = null, h0 = null, volvio = null, msVuelta = 0; try { dest = Mo.ancla ? Mo.ancla() : null; h0 = heroJ(); } catch (e) { /* nada */ }
     try {
       Mo.viaje(true);
-      while ((Date.now() - t0 < 7000 || (llegoT && Date.now() - llegoT < LOOT.esperaMs + 1200 && Date.now() - t0 < LOOT.esperaMs + 15000)) && vivoJ && LOOT.on) {      // v0.100.10: el tope de 7 s era para CAMINAR; ya parado esperando el servidor tiene sus propios 5,8 s (caja 77: 'tiempo' en plena espera)
+      while ((Date.now() - t0 < 10000 || (llegoT && Date.now() - llegoT < LOOT.esperaMs + 1200 && Date.now() - t0 < LOOT.esperaMs + 15000)) && vivoJ && LOOT.on) {      // v0.100.10: el tope de 7 s era para CAMINAR; ya parado esperando el servidor tiene sus propios 5,8 s (caja 77: 'tiempo' en plena espera)
         chk(); const aun = B.suelo().find((x) => x.id === it.id), h = heroJ();
         if (!aun) {      // v0.99.5: "juntado" solo si el SERVIDOR lo confirmó (paquetes.recogidas.ok de ese tipo subió); antes alcanzaba con que el item desapareciera con vos cerca (caja 65: 1 "juntada" falsa)
           ok = chebJ(it, h) <= 2; const P2 = window.__paquetes; if (ok && P2 && P2.recogidas && rc0 != null) ok = (P2.recogidas().ok[keyIt] || 0) > rc0;
@@ -171,6 +171,8 @@
         // v0.100.10 (caja 77: se frenó UNA casilla más allá del item, a distancia 1, y el 1.er pedido salió desde ahí): si al frenar quedó a 1 casilla y todavía no pidió nada, vuelve a ponerse EXACTO sobre la casilla (hasta 2 ajustes).
         if (llegoT) { const dd = chebJ(heroJ(), it); if (dd > 1) { llegoT = 0; pqs = 0; r = Mv.paso(it.x, it.y, 0); } else if (dd === 1 && pqs === 0 && ajustes < 2 && Date.now() - llegoT > 250) { ajustes++; llegoT = 0; r = Mv.paso(it.x, it.y, 0); } else r = 'llegó'; }
         else r = Mv.paso(it.x, it.y, 0);
+        // v0.100.13 (caja 81: entre 18 y 74 bichos en pantalla, rebotó 5 s a 1-3 casillas de la casilla del item sin poder pararse EXACTO encima, y se acabó el tiempo): si lleva más de 1,2 s a 1 casilla o menos, se frena ahí y pide igual.
+        if (r !== 'llegó' && !llegoT) { if (chebJ(heroJ(), it) <= 1) { if (!cercaT) cercaT = Date.now(); else if (Date.now() - cercaT > 1200) r = 'llegó'; } else cercaT = 0; }
         if (r === 'llegó' && !llegoT) { llegoT = Date.now(); try { Mv.parar(); } catch (e) { /* nada */ } try { M()._MuWebCancelHeroWalk && M()._MuWebCancelHeroWalk(); } catch (e) { /* nada */ } }
         if (r === 'sin calibrar' || r === 'sin dirección') { razon = r; break; }
         if (r === 'llegó') {
