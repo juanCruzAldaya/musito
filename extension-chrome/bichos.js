@@ -164,7 +164,7 @@
       const hx = g('GetHeroX'), hy = g('GetHeroY'), en = farmeando();
       for (let i = 0; i < n; i++) {
         const o = 5 + i * (4 + L), item = (u[o + 4] >> 4) + ':' + u[o + 5];
-        suelo.set(((u[o] & 0x7F) << 8) | u[o + 1], { x: u[o + 2], y: u[o + 3], item, g: u[o + 4] >> 4, i: u[o + 5], lv: u[o + 6], t: Date.now() });
+        { const idS = ((u[o] & 0x7F) << 8) | u[o + 1], ant = suelo.get(idS); suelo.set(idS, { x: u[o + 2], y: u[o + 3], item, g: u[o + 4] >> 4, i: u[o + 5], lv: u[o + 6], t: Date.now(), t0: ant && ant.t0 ? ant.t0 : Date.now(), nuevo: !!(u[o] & 0x80) }); }      // v0.100.12: t0 = la PRIMERA vez que se vio (t se renueva con cada aviso); nuevo = bit 0x80 del id (caída nueva)
         if (!(u[o] & 0x80)) continue;                          // sin el bit 0x80 = ya estaba en el piso
         val.c20nuevos++;
         if (!en || Math.max(Math.abs(u[o + 2] - hx), Math.abs(u[o + 3] - hy)) > 15) continue;

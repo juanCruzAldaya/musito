@@ -147,9 +147,9 @@
     let key = '?', edad = null, dist = null;
     try {
       const B = window.__bichos, M = window.Module, it = B && B.suelo ? B.suelo().find((x) => x.id === id) : null;
-      if (it) { key = it.g + ':' + it.i + ':' + it.lv; edad = Math.round((Date.now() - it.t) / 1000); if (M && M._MuWebGetHeroX) dist = Math.max(Math.abs(it.x - M._MuWebGetHeroX()), Math.abs(it.y - M._MuWebGetHeroY())); }
+      if (it) { key = it.g + ':' + it.i + ':' + it.lv; edad = Math.round((Date.now() - (it.t0 || it.t)) / 1000); if (M && M._MuWebGetHeroX) dist = Math.max(Math.abs(it.x - M._MuWebGetHeroX()), Math.abs(it.y - M._MuWebGetHeroY())); }
     } catch (e) { /* nada */ }
-    ultimoPedido = { id, key, edad, dist }; pi(key).pedidos++;
+    ultimoPedido = { id, key, edad, dist, nuevo: undefined }; pi(key).pedidos++;
   }
   function recogidaRx(m, u8) {
     if (m.k !== 'C3:0x22' || !u8 || u8.length < 4) return;
@@ -160,7 +160,7 @@
       if (u.dist != null) { e.dist_min = Math.min(e.dist_min, u.dist); e.dist_max = Math.max(e.dist_max, u.dist); }
       recogidas.ultimos.push({ t_s: t, res: 'rechazo', id: u.id, item: u.key, edad_s: u.edad, dist: u.dist });
     } else if (r === 0xfe) recogidas.zen++;
-    else if (u8.length >= 8) { const k = (u8[4] >> 4) + ':' + u8[5] + ':' + u8[6]; recogidas.ok[k] = (recogidas.ok[k] || 0) + 1; recogidas.ultimos.push({ t_s: t, res: 'ok ' + k, casilla: r }); }
+    else if (u8.length >= 8) { const k = (u8[4] >> 4) + ':' + u8[5] + ':' + u8[6]; recogidas.ok[k] = (recogidas.ok[k] || 0) + 1; { const e = pi(k); (e.ok_edades_s = e.ok_edades_s || []).push((ultimoPedido && ultimoPedido.edad != null) ? ultimoPedido.edad : null); if (e.ok_edades_s.length > 30) e.ok_edades_s.shift(); } recogidas.ultimos.push({ t_s: t, res: 'ok ' + k, casilla: r, edad_s: ultimoPedido ? ultimoPedido.edad : null }); }
     if (recogidas.ultimos.length > 25) recogidas.ultimos.shift();
   }
   const recogidasInforme = () => ({ propios: recogidas.propios || 0, pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, por_item: recogidas.por_item, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
