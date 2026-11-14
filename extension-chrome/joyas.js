@@ -129,7 +129,7 @@
   // El cliente ya junta solo lo que cae cerca (~1 pedido/s). Esto va a buscar, sin forjar paquetes, SOLO los items con la firma elegida: camina hasta la casilla del item (pasar por encima lo levanta),
   // sin pulsos mientras camina, y la correa del modo lo trae de vuelta al ancla. Firma = grupo:índice y nivel que trae el aviso de item caído (C2 0x20: byte0>>4 = grupo, byte1 = índice, byte2 = nivel).
   // La firma de la Kundun +5 (14:11 nivel 12) es la del MU estándar y NO está verificada en este servidor: la caja trae loot.firmas_vistas (todo lo que cayó) y el Lab tiene "Marcar el más cercano".
-  const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, clics: 0, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
+  const LOOT = { on: true, firmas: [{ g: 14, i: 11, lv: 12 }], radio: 12, ocupado: false, ign: new Map(), vistos: new Map(), ids: new Set(), objetivos: 0, clics: 0, offOk: null, offStats: {}, juntados: 0, otros: 0, perdidos: 0, sinDatos: 0, msViaje: [], ult: '' };
   // v0.91.0: set Paewang (en el juego "Real"; Dark Lord): pantalón 9:51, guantes 10:51, botas 11:51 (las piezas que le faltan al usuario). Grupo:índice según el OpenMU del servidor (CreateArmor/CreateGloves/CreateBoots 51). Cualquier nivel.
   const PAEWANG = [{ g: 9, i: 51, lv: null }, { g: 10, i: 51, lv: null }];      // las botas (11:51) YA las tiene: se excluyeron a pedido (v0.92.0)
   const EXCLUIDOS = [{ g: 11, i: 51 }];
@@ -149,14 +149,14 @@
   const coincide = (it) => it.g !== undefined && (LOOT.firmas.some((f) => it.g === f.g && it.i === f.i && (f.lv == null || it.lv === f.lv)) || (LOOT.nombres.length > 0 && (() => { const n = normN(nombreItem(it.g, it.i)); return !!n && LOOT.nombres.some((q) => n.includes(q)); })()));
   const chebJ = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
   const heroJ = () => { const m = M(); return { x: m._MuWebGetHeroX(), y: m._MuWebGetHeroY() }; };
-  const OFFS_CLIC = [[0, 0], [0, -10], [12, 0]];
+  const OFFS_CLIC = [[0, -22], [0, -36], [0, -8], [0, -50], [-28, -22], [28, -22], [0, 8], [-56, -22], [56, -22], [0, -64], [-28, -42], [28, -42]];
   async function juntar(it) {
     LOOT.ocupado = true; LOOT.objetivos++;
-    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
+    const B = window.__bichos, Mo = window.__modo, Mv = window.__mover, t0 = Date.now(); let ok = false, llegoT = 0, razon = 'tiempo', clics = 0, ult = null, pidio = false; const chk = () => { const P4 = window.__paquetes; if (ult && !pidio && P4 && P4.pedidosDe && P4.pedidosDe(it.id) > ult.p0) { pidio = true; const e = LOOT.offStats[ult.o.join(',')] = LOOT.offStats[ult.o.join(',')] || { clics: 0, pedidos: 0 }; e.pedidos++; LOOT.offOk = ult.o; } }; const lista = LOOT.offOk ? [LOOT.offOk].concat(OFFS_CLIC.filter((x) => x.join(',') !== LOOT.offOk.join(','))) : OFFS_CLIC; const keyIt = it.g + ':' + it.i + ':' + it.lv; let rc0 = null; try { const P0 = window.__paquetes; rc0 = P0 && P0.recogidas ? (P0.recogidas().ok[keyIt] || 0) : null; } catch (e) { rc0 = null; }
     try {
       Mo.viaje(true);
       while (Date.now() - t0 < 7000 && vivoJ && LOOT.on) {
-        const aun = B.suelo().find((x) => x.id === it.id), h = heroJ();
+        chk(); const aun = B.suelo().find((x) => x.id === it.id), h = heroJ();
         if (!aun) {      // v0.99.5: "juntado" solo si el SERVIDOR lo confirmó (paquetes.recogidas.ok de ese tipo subió); antes alcanzaba con que el item desapareciera con vos cerca (caja 65: 1 "juntada" falsa)
           ok = chebJ(it, h) <= 2; const P2 = window.__paquetes; if (ok && P2 && P2.recogidas && rc0 != null) ok = (P2.recogidas().ok[keyIt] || 0) > rc0;
           razon = ok ? 'juntado' : 'lo juntó otro'; break;
@@ -165,14 +165,16 @@
         const r = Mv.paso(it.x, it.y, 0);
         if (r === 'sin calibrar' || r === 'sin dirección') { razon = r; break; }
         if (r === 'llegó') {
-          // v0.99.5 (cajas 65-66): pasar por encima SOLO levanta joyas (el cliente pidió 101 veces y NUNCA pidió una Box de Kundun: 0 de 22). Las demás hay que clickearlas: al llegar, clic izquierdo sobre la casilla del item (como lo harías a mano), hasta 3 intentos con un pequeño corrimiento.
+          // v0.99.5: pasar por encima SOLO levanta joyas; las demás hay que clickearlas. v0.99.7 (caja 67): 10 clics sobre la casilla del piso y NINGÚN pedido de recoger: el clic no le pega al item. En el MU el item se elige con el puntero sobre su
+          // NOMBRE (la etiqueta flota por encima de la casilla) o su modelo, así que se prueban puntos más arriba (como hace atacar() con los bichos) y se mira si el CLIENTE manda el pedido de recoger (tx C3 22 con el id del item): ese es el acierto y se recuerda el punto.
           if (!llegoT) llegoT = Date.now();
           else {
-            const S = window.__pantalla, desde = Date.now() - llegoT, puedeClic = !!(S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
-            if (puedeClic && clics < OFFS_CLIC.length && desde > 250 + clics * 700) {
-              const px = S.pixelDe(it.x, it.y, 0), o = OFFS_CLIC[clics++];
-              if (px && S.enPantalla(px)) { LOOT.clics++; await S.clic(px.x + o[0], px.y + o[1], 90); }
-            } else if (desde > (puedeClic ? 250 + OFFS_CLIC.length * 700 + 500 : 900)) { razon = 'llegó pero no lo levantó' + (puedeClic ? ' (tras ' + clics + ' clics)' : ' (sin clic: ' + (document.hasFocus() ? 'sin calibrar' : 'el navegador no tiene el foco') + ')'); break; }
+            const S = window.__pantalla, P3 = window.__paquetes, desde = Date.now() - llegoT, puedeClic = !!(S && S.pixelDe && S.clic && S.enPantalla && document.hasFocus());
+            const pidios = () => (P3 && P3.pedidosDe ? P3.pedidosDe(it.id) : 0);
+            if (puedeClic && !pidio && clics < lista.length && desde > 250 + clics * 380) {
+              const px = S.pixelDe(it.x, it.y, 0), o = lista[clics++];
+              if (px && S.enPantalla(px)) { LOOT.clics++; const e = LOOT.offStats[o.join(',')] = LOOT.offStats[o.join(',')] || { clics: 0, pedidos: 0 }; e.clics++; ult = { o, p0: pidios() }; await S.clic(px.x + o[0], px.y + o[1], 90); }
+            } else if (desde > (puedeClic ? 250 + lista.length * 380 + 600 : 900) || (pidio && desde > 3000)) { razon = 'llegó pero no lo levantó' + (puedeClic ? ' (tras ' + clics + ' clics' + (pidio ? ', el cliente SÍ pidió recogerlo: el servidor lo rechazó o tardó' : ', el cliente nunca pidió recogerlo: el clic no le pegó') + ')' : ' (sin clic: ' + (document.hasFocus() ? 'sin calibrar' : 'el navegador no tiene el foco') + ')'); break; }
           }
         }
         await new Promise((res) => setTimeout(res, 60));
@@ -279,7 +281,7 @@
     agregarNombre: (texto) => { const q = normN(texto); if (q.length < 3) return { ok: false, motivo: 'escribí al menos 3 letras' }; if (!LOOT.nombres.includes(q)) LOOT.nombres.push(q); guardarLoot(); let h = null; try { const r = window.__loot.buscarNombre(texto); if (r.ok && r.encontrados.length && r.encontrados.length <= 40) h = helperAgregar([...new Set(r.encontrados.map((x) => x.nombre))], true); } catch (e) { /* nada */ } return { ok: true, nombres: LOOT.nombres.slice(), helper: h }; },
     quitarNombres: () => { LOOT.nombres = []; guardarLoot(); return true; },
     cerca: () => { const B = window.__bichos, h = heroJ(); return B && B.suelo ? B.suelo().filter((x) => chebJ(x, h) <= 15).sort((p, q) => chebJ(p, h) - chebJ(q, h)).slice(0, 12).map((x) => (x.g === undefined ? '?' : x.g + ':' + x.i + ' niv ' + x.lv) + ' a ' + chebJ(x, h)) : []; },
-    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), helper_nombres: (() => { try { return { auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }; } catch (e) { return null; } })(), radio: LOOT.radio, objetivos: LOOT.objetivos, clics: LOOT.clics, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
+    stats: () => ({ activo: LOOT.on, firmas: LOOT.firmas.map(firmaTxt), nombres: LOOT.nombres.slice(), firmas_nombres: LOOT.firmas.map((f) => f.g + ':' + f.i + ' = ' + (nombreItem(f.g, f.i) || '?')), helper_nombres: (() => { try { return { auto: HELP.auto, ultimo: HELP.ult, intentos: HELP.intentos, ...(helperLeer()) }; } catch (e) { return null; } })(), radio: LOOT.radio, objetivos: LOOT.objetivos, clics: LOOT.clics, clic_acierto_punto: LOOT.offOk, clic_puntos: LOOT.offStats, juntados: LOOT.juntados, los_junto_otro: LOOT.otros, perdidos: LOOT.perdidos, ms_viaje_med: LOOT.msViaje.length ? Math.round([...LOOT.msViaje].sort((a, b) => a - b)[LOOT.msViaje.length >> 1]) : null, ultimo: LOOT.ult, sin_firma_bichos_viejo: LOOT.sinDatos,
       firmas_vistas: [...LOOT.vistos].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => k + ' x' + n) }),
   };
   window.__joyas = {

@@ -222,6 +222,7 @@
     inventario: () => ({ ...inv, catalogo_cargado: !!catalogo, items: inv.items.map((x) => ({ ...x, nombre: nombreDeItem(x.grupo, x.indice), afijos_txt: (x.afijos || []).map(afijoTexto) })), cambios: cambios.map((c) => ({ ...c, nombre: nombreDeItem(c.grupo, c.indice), afijos_txt: c.afijos.map(afijoTexto) })) }),
     enviadosRecientes: () => enviadosRecientes,
     recogidas: () => recogidasInforme(),
+    pedidosDe: (id) => recogidas.intentos_por_id[id] || 0,
     informe: () => ({ rareza_sniff: rareza, recientes_raros: recientesRaros, enviados_recientes: enviadosRecientes, recogidas: recogidasInforme(), hora: new Date().toISOString(), segundos: Math.round((Date.now() - t0) / 1000), total, recibidos: resumen(rx), enviados: resumen(tx), ultimosRecibidos: ult, muestras, castsTx, porVentanaDe10s: ventanas, porVentanaDe10sEnviados: ventanasTx }),
   };
 })();
