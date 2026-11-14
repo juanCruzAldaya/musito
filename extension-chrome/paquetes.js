@@ -137,22 +137,33 @@
   }
   // ---- RECOGIDAS (v0.99.3): qué pasa cuando el cliente pide levantar un item del piso (tx C3 22 [id 2 bytes]) y qué contesta el servidor (rx C3 22: FF = no lo dio, FE = zen, otro = casilla + item) ----
   // Para saber si "lo intenta levantar pero no lo levanta" es que el servidor lo rechaza (y cuántas veces, de qué item) o que ni siquiera lo pide.
-  const recogidas = { pedidos: 0, ok: {}, zen: 0, rechazos: 0, intentos_por_id: {}, ultimos: [] };
+  const recogidas = { pedidos: 0, ok: {}, zen: 0, rechazos: 0, intentos_por_id: {}, por_item: {}, ultimos: [] };
   let ultimoPedido = null;
+  const pi = (k) => recogidas.por_item[k] || (recogidas.por_item[k] = { pedidos: 0, rechazos: 0, edad_s_min: 1e9, edad_s_max: 0, dist_min: 99, dist_max: 0 });
   function recogidaTx(m, u8) {
     if (m.k !== 'C3:0x22' || !u8 || u8.length < 5) return;
-    const id = (u8[3] << 8) | u8[4]; recogidas.pedidos++; ultimoPedido = id;
+    const id = (u8[3] << 8) | u8[4]; recogidas.pedidos++;
     recogidas.intentos_por_id[id] = (recogidas.intentos_por_id[id] || 0) + 1;
+    let key = '?', edad = null, dist = null;
+    try {
+      const B = window.__bichos, M = window.Module, it = B && B.suelo ? B.suelo().find((x) => x.id === id) : null;
+      if (it) { key = it.g + ':' + it.i + ':' + it.lv; edad = Math.round((Date.now() - it.t) / 1000); if (M && M._MuWebGetHeroX) dist = Math.max(Math.abs(it.x - M._MuWebGetHeroX()), Math.abs(it.y - M._MuWebGetHeroY())); }
+    } catch (e) { /* nada */ }
+    ultimoPedido = { id, key, edad, dist }; pi(key).pedidos++;
   }
   function recogidaRx(m, u8) {
     if (m.k !== 'C3:0x22' || !u8 || u8.length < 4) return;
     const r = u8[3], t = Math.round((Date.now() - t0) / 1000);
-    if (r === 0xff) { recogidas.rechazos++; recogidas.ultimos.push({ t_s: t, res: 'rechazo', id_pedido: ultimoPedido }); }
-    else if (r === 0xfe) recogidas.zen++;
+    if (r === 0xff) {
+      recogidas.rechazos++; const u = ultimoPedido || {}, e = pi(u.key || '?'); e.rechazos++;
+      if (u.edad != null) { e.edad_s_min = Math.min(e.edad_s_min, u.edad); e.edad_s_max = Math.max(e.edad_s_max, u.edad); }
+      if (u.dist != null) { e.dist_min = Math.min(e.dist_min, u.dist); e.dist_max = Math.max(e.dist_max, u.dist); }
+      recogidas.ultimos.push({ t_s: t, res: 'rechazo', id: u.id, item: u.key, edad_s: u.edad, dist: u.dist });
+    } else if (r === 0xfe) recogidas.zen++;
     else if (u8.length >= 8) { const k = (u8[4] >> 4) + ':' + u8[5] + ':' + u8[6]; recogidas.ok[k] = (recogidas.ok[k] || 0) + 1; recogidas.ultimos.push({ t_s: t, res: 'ok ' + k, casilla: r }); }
     if (recogidas.ultimos.length > 25) recogidas.ultimos.shift();
   }
-  const recogidasInforme = () => ({ pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
+  const recogidasInforme = () => ({ pedidos: recogidas.pedidos, ok: recogidas.ok, zen: recogidas.zen, rechazos: recogidas.rechazos, por_item: recogidas.por_item, mas_pedidos: Object.entries(recogidas.intentos_por_id).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([id, n]) => 'id ' + id + ' x' + n), ultimos: recogidas.ultimos });
   const escRx = [], escTx = [];   // oyentes de paquetes (solo lectura): window.__paquetes.alRecibir(fn) / alEnviar(fn)
   function anotar(tabla, m, dir, u8) {
     if (!m) return;
