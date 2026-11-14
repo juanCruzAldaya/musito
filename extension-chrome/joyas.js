@@ -242,6 +242,13 @@
         try { diag += ' · muAllocateUtf8 = ' + String(window.muAllocateUtf8).replace(/\s+/g, ' ').slice(0, 260); } catch (e) { /* nada */ }
         let p3 = 0; try { p3 = window.muAllocateUtf8(texto + '\0\0\0\0\0\0\0\0'); r = llamar(p3); diag += ' · 2º intento con NUL final (' + p3 + ') → ' + r; } catch (e) { diag += ' · el intento con NUL falló'; } finally { try { if (p3) m._free(p3); } catch (e) { /* nada */ } }
       }
+      if (r === -1 || r == null) {      // v0.99.9 SONDA (caja 68: sigue -1 con puntero válido y NUL final): variantes del llamado, para ver cuál acepta el juego. Solo si todas las anteriores dieron -1; ninguna borra nada (siempre va la lista completa).
+        const pv = [[texto, 0], [texto + '\n', 1], [texto + '\r\n', 1]];
+        for (const [tv, act] of pv) {
+          let p5 = 0; try { p5 = window.muAllocateUtf8(tv); const rv = m._MuWebHelperSetPickupNamesUtf8(p5, act); diag += ' · variante(' + JSON.stringify(tv.slice(-3)) + ',' + act + ')→' + rv; if (rv !== -1 && rv != null) { r = rv; break; } } catch (e) { diag += ' · variante falló'; } finally { try { if (p5) m._free(p5); } catch (e) { /* nada */ } }
+        }
+        try { diag += ' · IsActive=' + (m._MuWebHelperIsActive ? m._MuWebHelperIsActive() : '?') + ' escena=' + m._MuWebGetSceneFlag(); } catch (e) { /* nada */ }
+      }
       if (r === -1 || r == null) {      // caja 45: devolvió -1 (puntero nulo o texto > 2048 bytes): 2º intento reservando yo la memoria con malloc, con el 0 final
         let p2 = 0;
         try { const bytes = new TextEncoder().encode(texto); p2 = m._malloc ? m._malloc(bytes.length + 1) : 0; if (p2 && m.HEAPU8) { m.HEAPU8.set(bytes, p2); m.HEAPU8[p2 + bytes.length] = 0; r = llamar(p2); diag += ' · 2º intento con malloc (' + p2 + ') → ' + r; } else diag += ' · sin malloc/HEAPU8'; } catch (e) { diag += ' · el 2º intento falló'; } finally { try { if (p2) m._free(p2); } catch (e) { /* nada */ } }
