@@ -141,12 +141,12 @@
   const SOLO = [{ g: 10, i: 51, lv: null }];
   LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = [];
   const sinExcluidos = () => { LOOT.firmas = LOOT.firmas.filter((f) => !EXCLUIDOS.some((e) => e.g === f.g && e.i === f.i)); };
-  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (!(s.v >= 2)) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); if (!(s.v >= 7)) { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; } } } catch (e) { /* nada */ }
-  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 7, on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
+  try { const s = JSON.parse(localStorage.getItem('muLootV1') || 'null'); if (s) { if (typeof s.on === 'boolean') LOOT.on = s.on; if (typeof s.clic === 'boolean') LOOT.clic = s.clic; if (!(s.v >= 5)) { LOOT.on = false; LOOT.clic = false; } if (!(s.v >= 6)) LOOT.on = true; if (typeof s.paquete === 'boolean') LOOT.paquete = s.paquete; if (Array.isArray(s.firmas) && s.firmas.length) { LOOT.firmas = s.firmas; if (!(s.v >= 2)) PAEWANG.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i)) LOOT.firmas.push(p); }); if (!(s.v >= 4)) PRUEBA.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); if (!(s.v >= 3)) KUNDUN.forEach((p) => { if (!LOOT.firmas.some((x) => x.g === p.g && x.i === p.i && x.lv === p.lv)) LOOT.firmas.push(p); }); sinExcluidos(); } if (Array.isArray(s.nombres)) LOOT.nombres = s.nombres.slice(0, 40); if (!(s.v >= 7)) { LOOT.firmas = SOLO.map((f) => ({ ...f })); LOOT.nombres = []; } if (s.vGuantes) LOOT.vGuantes = true; } } catch (e) { /* nada */ }
+  const guardarLoot = () => { try { localStorage.setItem('muLootV1', JSON.stringify({ v: 7, vGuantes: !!LOOT.vGuantes, on: LOOT.on, clic: LOOT.clic, paquete: LOOT.paquete, firmas: LOOT.firmas, nombres: LOOT.nombres })); } catch (e) { /* nada */ } };
   // nombre del item en el idioma del juego (MuWebGetItemNameUtf8(grupo, índice)); sin acentos y en minúscula para comparar. Se guarda en memoria: 1 consulta por item distinto.
   const normN = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   const cacheNom = new Map();
-  const nombreItem = (g, i) => { const k = g * 1000 + i; if (cacheNom.has(k)) return cacheNom.get(k); let n = ''; try { const m = M(), p = m._MuWebGetItemNameUtf8 ? m._MuWebGetItemNameUtf8(g, i) | 0 : 0; n = p ? m.UTF8ToString(p) : ''; } catch (e) { n = ''; } cacheNom.set(k, n); return n; };
+  const nombreItem = (g, i) => { const k = g * 1000 + i; if (cacheNom.has(k)) return cacheNom.get(k); let n = ''; try { const m = M(), p = m._MuWebGetItemNameUtf8 ? m._MuWebGetItemNameUtf8(g, i) | 0 : 0; n = p ? m.UTF8ToString(p) : ''; } catch (e) { n = ''; } if (n) cacheNom.set(k, n); return n; };      // v0.100.3: los vacíos no se guardan (al principio el juego todavía no cargó los nombres)
   const firmaTxt = (f) => f.g + ':' + f.i + (f.lv == null ? ' (cualquier nivel)' : ' nivel ' + f.lv);
   const coincide = (it) => it.g !== undefined && (LOOT.firmas.some((f) => it.g === f.g && it.i === f.i && (f.lv == null || it.lv === f.lv)) || (LOOT.nombres.length > 0 && (() => { const n = normN(nombreItem(it.g, it.i)); return !!n && LOOT.nombres.some((q) => n.includes(q)); })()));
   const chebJ = (a, b) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
@@ -265,6 +265,22 @@
     const des = helperLeer(); HELP.ult = 'agregué ' + nuevos.length + ' nombre(s) [' + nuevos.join(', ') + '] · el juego devolvió ' + r + diag + ' · ahora la lista tiene ' + (des.nombres || []).length + ' y está ' + (des.activo ? 'ACTIVADA' : 'apagada'); L('helper: ' + HELP.ult);
     return { ok: r !== -1, devolvio: r, agregados: nuevos, ...des };
   }
+  // v0.100.3 (pedido: "agregá los guantes valorosos y los guantes divinos para lootear y chequear que funcione, salen con más cadencia"): no sé su grupo:índice en este servidor, así que al entrar al juego
+  // se buscan por NOMBRE en la tabla del propio cliente (MuWebGetItemNameUtf8) y se agregan sus firmas (grupo 10 = guantes, cualquier nivel). Una sola vez (queda guardado); el resultado va al registro.
+  const BUSCAR_GUANTES = ['guantes valoros', 'guantes divin'];
+  let guantesTick = 0;
+  setInterval(() => {
+    try {
+      if (LOOT.vGuantes) return; const m = M(); if (!m || m._MuWebGetSceneFlag() !== 5) return; if (++guantesTick < 6) return;
+      const enc = [];
+      for (const q of BUSCAR_GUANTES) { const r = window.__loot && window.__loot.buscarNombre ? window.__loot.buscarNombre(q) : null; if (r && r.ok) r.encontrados.filter((x) => x.g === 10).forEach((x) => { if (!enc.some((e) => e.i === x.i)) enc.push(x); }); }
+      if (!enc.length && guantesTick < 40) return;      // los nombres todavía no se pueden leer: reintenta
+      LOOT.vGuantes = true;
+      enc.forEach((x) => { if (!LOOT.firmas.some((f) => f.g === x.g && f.i === x.i)) LOOT.firmas.push({ g: x.g, i: x.i, lv: null }); });
+      guardarLoot();
+      L('piso: ' + (enc.length ? 'agregué a la lista ' + enc.map((x) => x.g + ':' + x.i + ' ' + x.nombre).join(', ') : 'NO encontré "Guantes Valorosos" ni "Guantes Divinos" en los nombres del juego (decime cómo aparecen en el piso)'));
+    } catch (e) { LOOT.vGuantes = true; }
+  }, 1000);
   const nombresPaewang = () => PAEWANG.map((p) => nombreItem(p.g, p.i)).filter(Boolean);
   // una sola vez por carga, con el personaje en el juego y vivo (ApplyConfig recarga la configuración del Helper): pone los nombres del set Real
   let helperTick = 0;
