@@ -115,7 +115,7 @@
       bitacora_decisiones: bit, fotos_de_bichos: fotos, tiempo_por_estado: resumenTiempos(),
       calibracion: { pantalla: S && S.cal ? S.cal() : null, sesgo: S && S.sesgo ? S.sesgo() : null, movimiento: Mv && Mv.tabla ? Mv.tabla() : null },
       etapas_reset: window.__etapas ? window.__etapas.todo() : null,
-      resets_lab: window.__resets ? { horas: window.__resets.lista().map((t) => new Date(t).toISOString()), ...window.__resets.stats() } : null,
+      resets_lab: window.__resets ? { total: window.__resets.cuenta(), meta: window.__resets.meta(), horas: window.__resets.lista().map((t) => new Date(t).toISOString()), ...window.__resets.stats() } : null,
       golpes: window.__golpes ? window.__golpes.datos() : null,
       telemetria: window.__telemetria ? window.__telemetria.datos() : null,
       ventanas_modo: window.__modo && window.__modo.ventanas ? window.__modo.ventanas() : null,

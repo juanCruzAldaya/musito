@@ -42,6 +42,12 @@
   // las horas de los últimos 40 (sobreviven a recargar). Se muestra: avance del reset actual (nivel / 400), tiempo medio por reset (últimos 5) y resets por hora.
   const NIVEL_RESET = 400, KEY_RES = 'muResetsV1';
   let resets = []; try { const r = JSON.parse(localStorage.getItem(KEY_RES) || '[]'); if (Array.isArray(r)) resets = r.filter((x) => typeof x === 'number').slice(-40); } catch (e) { resets = []; }
+  // v0.100.8 (pedido: "voy 229, tengo que llegar a 250; después cuentan 250 más, y cada 250 dan 7 gemas"): contador de resets total, con meta en el próximo múltiplo de 250. Arranca en 229 (lo que dijo el usuario)
+  // y suma 1 por cada reset que detecta; se corrige tocando el texto del encabezado del Lab. Se guarda en localStorage (muResetsCuentaV1).
+  const KEY_CNT = 'muResetsCuentaV1', PASO_META = 250;
+  let cuenta = 229; try { const c = JSON.parse(localStorage.getItem(KEY_CNT) || 'null'); if (c && typeof c.n === 'number') cuenta = c.n; } catch (e) { /* nada */ }
+  const guardarCuenta = () => { try { localStorage.setItem(KEY_CNT, JSON.stringify({ n: cuenta })); } catch (e) { /* nada */ } };
+  const metaDe = (n) => (Math.floor(n / PASO_META) + 1) * PASO_META;
   let lvPrev = null;
   const mmss = (ms) => { const s = Math.round(ms / 1000), m = Math.floor(s / 60); return m >= 60 ? Math.floor(m / 60) + 'h' + String(m % 60).padStart(2, '0') : m + ':' + String(s % 60).padStart(2, '0'); };
   const statsReset = () => {
@@ -50,20 +56,22 @@
     const enHora = resets.filter((t) => Date.now() - t < 3600000).length;
     return { medio, porHora: medio ? 3600000 / medio : null, enHora, desde: resets.length ? Date.now() - resets[resets.length - 1] : null };
   };
-  window.__resets = { lista: () => resets.slice(), stats: statsReset, borrar: () => { resets = []; try { localStorage.removeItem(KEY_RES); } catch (e) { /* nada */ } } };
+  window.__resets = { cuenta: () => cuenta, fijar: (n) => { if (typeof n === 'number' && n >= 0 && n < 100000) { cuenta = Math.round(n); guardarCuenta(); } return cuenta; }, meta: () => metaDe(cuenta), lista: () => resets.slice(), stats: statsReset, borrar: () => { resets = []; try { localStorage.removeItem(KEY_RES); } catch (e) { /* nada */ } } };
   setInterval(() => {
     if (!caja) return;
     try {
       const lv = call('GetPlayerLevel'), pm = call('GetExperiencePermille');
-      if (typeof lv === 'number' && lv > 0) { if (lvPrev != null && lvPrev >= 200 && lv <= lvPrev - 100) { resets.push(Date.now()); resets = resets.slice(-40); try { localStorage.setItem(KEY_RES, JSON.stringify(resets)); } catch (e) { /* nada */ } } lvPrev = lv; }
+      if (typeof lv === 'number' && lv > 0) { if (lvPrev != null && lvPrev >= 200 && lv <= lvPrev - 100) { resets.push(Date.now()); resets = resets.slice(-40); cuenta++; guardarCuenta(); try { localStorage.setItem(KEY_RES, JSON.stringify(resets)); } catch (e) { /* nada */ } } lvPrev = lv; }
       const n = caja.querySelector('#lab-nivel'), br = caja.querySelector('#lab-barra');
       if (n && typeof lv === 'number' && typeof pm === 'number') {
         const Mo = window.__modo, nph = Mo && Mo.nivelesPorHora ? Mo.nivelesPorHora() : null, spn = Mo && Mo.segPorNivel ? Mo.segPorNivel() : null, mpm = Mo && Mo.muertesPorMin ? Mo.muertesPorMin() : null;
         const ml = lv >= 400 ? (Mo && Mo.nivelMaster ? Mo.nivelMaster() : call('GetMasterLevel')) : null;
         const sr = statsReset(), avance = Math.min(100, Math.round((lv / NIVEL_RESET) * 100));
-        const txtRes = ' · reset ' + avance + ' %' + (sr.medio ? ' · ' + mmss(sr.medio) + '/reset · ' + sr.porHora.toFixed(1) + ' res/h' : sr.desde != null ? ' · último hace ' + mmss(sr.desde) : '');
+        const meta = metaDe(cuenta), falta = meta - cuenta, eta = sr.medio ? mmss(falta * sr.medio) : null;
+        const txtRes = ' · R' + cuenta + '/' + meta + ' (faltan ' + falta + (eta ? ' · ~' + eta : '') + ') · reset ' + avance + ' %' + (sr.medio ? ' · ' + mmss(sr.medio) + '/reset · ' + sr.porHora.toFixed(1) + ' res/h' : sr.desde != null ? ' · último hace ' + mmss(sr.desde) : '');
+        if (!n._rset) { n._rset = true; n.style.cursor = 'pointer'; n.addEventListener('click', () => { const v = window.prompt('¿Cuántos resets llevás en total? (hoy cuenta ' + cuenta + ')', String(cuenta)); if (v != null && /^\d+$/.test(v.trim())) window.__resets.fijar(+v.trim()); }); }
         n.textContent = 'Nv ' + lv + (ml ? ' · M' + ml : '') + (pm < 999 ? ' · ' + (pm / 10).toFixed(1) + ' %' : '') + txtRes + (mpm != null ? ' · ' + mpm + ' mat/min' : '');
-        n.title = (nph != null && nph > 0 ? nph + (ml ? ' master/h' : ' niv/h') + (spn ? ' (' + spn + ' s por nivel)' : '') + ' · ' : '') + 'resets en la última hora: ' + sr.enHora + (sr.medio ? ' · tiempo medio por reset (últimos 5): ' + mmss(sr.medio) : ' · todavía no vi 2 resets seguidos');
+        n.title = (nph != null && nph > 0 ? nph + (ml ? ' master/h' : ' niv/h') + (spn ? ' (' + spn + ' s por nivel)' : '') + ' · ' : '') + 'meta: cada ' + PASO_META + ' resets dan 7 gemas · resets en la última hora: ' + sr.enHora + ' · tocá el texto para corregir el total' + (sr.medio ? ' · tiempo medio por reset (últimos 5): ' + mmss(sr.medio) : ' · todavía no vi 2 resets seguidos');
         if (br) br.style.width = Math.max(0, Math.min(100, pm / 10)) + '%';
       }
       const v = document.getElementById('vigia-panel'); if (v) v.style.bottom = (60 + SUBE) + 'px';
